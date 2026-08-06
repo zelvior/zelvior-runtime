@@ -1,5 +1,35 @@
 # Changelog
 
+## v0.3.3
+- Fix: `Metrics` ran a full `document.getElementsByTagName("*")` DOM-count
+  traversal every 500ms tick, forever, regardless of whether anything was
+  listening — real main-thread cost on DOM-heavy pages, working against the
+  runtime's own purpose. DOM count is now sampled every ~2s (every 4th
+  tick); FPS/memory stay on the original 500ms cadence.
+- Fix: the metrics/adaptive tick ran even while the tab was backgrounded.
+  Chrome throttles `requestAnimationFrame` to ~1fps in hidden tabs, which
+  `Adaptive` was reading as a genuine "critical fps" event and force-dropping
+  to the `max` degraded level — so switching back to a tab could land you in
+  reduced-quality mode for several idle+smooth cycles for no real reason.
+  The tick now short-circuits while `document.hidden` and resumes normal
+  sampling on return.
+
+## v0.3.2
+- Fix: `Adaptive`'s per-level `chunk`/`idleBoost` fields were computed and
+  applied to `Optimizer.config` but never actually read anywhere —
+  switching adaptive levels changed lazy-load margins/animation but not
+  scheduler throughput. `Scheduler` now reads `idleBoost` to widen the
+  high-priority frame budget on `quality`, and caps low-priority batch size
+  per tick with `chunk`.
+- Perf: fallback (no-`IntersectionObserver`) visibility watching attached a
+  `scroll`+`resize` listener pair *per watched element*. Now routed through
+  the single already-rAF-throttled scroll/resize path `Observer` already
+  maintains — N listeners collapsed to 1.
+- Perf: deferred images now get `decoding="async"` so decode work moves off
+  the main thread.
+- Fix: `Z.version` was hardcoded to `"0.3"` and had drifted from
+  `package.json`/`manifest.json` (`0.3.1`).
+
 ## v0.3.1
 - Fix: `build.mjs` (maintainer-only rebuild script) no longer uses top-level
   `await`, which threw an opaque `SyntaxError: Unexpected reserved word` on

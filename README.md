@@ -4,8 +4,8 @@
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 Dependency-free, adaptive browser runtime for lazy-loading, scheduling, and
-self-tuning performance based on live device/browser conditions. **~15KB
-minified, ~5.8KB gzipped, zero runtime dependencies.**
+self-tuning performance based on live device/browser conditions. **~15.5KB
+minified, ~5.9KB gzipped, zero runtime dependencies.**
 
 ## Install
 
@@ -130,7 +130,7 @@ needed.
 
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — subsystem internals and data flow
 - [PERFORMANCE.md](./PERFORMANCE.md) — full audit log: every defect found, why it mattered, and the fix
-- [CHANGELOG.md](./CHANGELOG.md) — version history
+- [CHANGELOG.md](./CHANGELOG.md) — version history (v0.3.2/v0.3.3: dead adaptive-level wiring connected to the scheduler, DOM-count sampling throttled, hidden-tab false-degradation bug fixed)
 
 ## Building from source
 
