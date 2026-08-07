@@ -127,6 +127,91 @@ considered below were explicitly rejected.
 
 ---
 
+## Pass 3 (v0.3.9) — benchmark-informed regression analysis
+
+Triggered by a user-submitted BrowserBench run on a 2009 Intel Atom laptop
+(1GB DDR2) using the browser extension. Raw results:
+
+| Suite | Δ duration | Direction |
+|---|---|---|
+| JS ES5 | -41.27% | improved |
+| Lit Complex DOM | -30.13% | improved |
+| Vue | -19.40% | improved |
+| Svelte | -18.55% | improved |
+| ES6 Webpack | -18.21% | improved |
+| Web Components | -7.63% | improved |
+| Backbone | +10.05% | regressed |
+| Angular Complex DOM | +16.31% | regressed |
+| Preact | +21.12% | regressed |
+| React Complex DOM | +22.26% | regressed |
+| jQuery | +23.53% | regressed |
+
+**What this data can and can't tell us.** This is a single run, on a single
+piece of hardware, with no stated sample count or confidence interval — see
+the benchmark-suite recommendations below for why that matters. Treated as
+a hypothesis-generator rather than a proof, the regression/improvement
+split lines up with a real, code-level mechanism (not just correlation):
+
+`Observer`'s `MutationObserver` callback (`onMutationBatch`, prior to
+v0.3.9) ran synchronously: for every added DOM node in a batch, it called
+`getElementsByTagName('img')` to decide whether the node's subtree
+contained an image worth deferring. This cost is paid **regardless of
+whether an image is found** — a page or benchmark scenario with zero
+images still pays the full traversal cost on every single inserted node.
+
+The regressed suites (React/Preact/Angular/Backbone/jQuery "Complex DOM")
+are exactly the js-framework-benchmark-style workloads characterized by
+high-frequency, image-free DOM churn — create/swap/update thousands of
+plain `<tr>`/`<td>`/`<a>` rows in a tight loop. On this workload, Zelvior's
+scanning was pure overhead with zero corresponding benefit, executed
+synchronously in the same frame the benchmark was timing, on a CPU (2009
+Atom, single/dual-core, no out-of-order execution) with very little spare
+headroom to begin with.
+
+The improved suites (Lit, Vue, Svelte, Web Components, ES6/Webpack, ES5)
+are more render/paint-heavy scenarios where deferring off-screen image
+work and cooperative main-thread scheduling has a clearer benefit that
+outweighs the same fixed per-mutation scanning cost.
+
+**The fix:** `onMutationBatch` now enqueues one `Scheduler.add(fn, 'low')`
+task per batch instead of running `processMutationBatch` inline. This
+moves the scanning work onto the runtime's existing idle-time low-priority
+queue (`requestIdleCallback`, or the 1ms `setTimeout` shim on browsers
+without it), out of the synchronous mutation-flush path that competes
+directly with a page's own script execution.
+
+**What was verified, and what wasn't.** This sandbox has no access to a
+real browser or to the original Atom hardware (network egress is
+allow-listed and doesn't include a browser-binary CDN) — see the repo's
+`test/basic.test.mjs` for what was actually run. What's verified: the fix
+is correctness-preserving (regression suite passes: images are still
+deferred, `MutationObserver` still fires, nothing throws) via jsdom, a
+real independent DOM implementation. What's **not** verified: the
+magnitude of any actual speedup on real hardware or in a real browser. An
+initial attempt to measure "total scanning time before vs. after" inside
+this sandbox produced numbers that swung by 5–10x between identical runs
+purely from Node/V8 JIT and GC warm-up noise — that data was discarded
+rather than reported, because it wasn't measuring the thing it claimed to
+measure. **If you re-run BrowserBench on the same or similar hardware
+after this update, that result is the real evidence — please share it.**
+
+**Also considered and rejected for this pass:**
+- **Skip the whole scanning pipeline entirely when `document.images.length
+  === 0` at `Observer.start()` time.** Rejected: a page can start with zero
+  images and later insert a subtree containing a nested `<img>` as a single
+  bulk `addedNodes` entry (common with virtual-DOM frameworks appending a
+  pre-built fragment). A "no images seen yet, so stop looking" flag would
+  silently break lazy-loading for exactly that case — a real functional
+  regression traded for an unverified performance gain. Not worth it.
+- **Skip the scan for leaf nodes (`!n.firstChild`).** True but doesn't
+  address the actual cost: `MutationObserver` typically reports the
+  *top-level* inserted node per record (e.g. one `<tr>` per row, not each
+  of its `<td>` children), and that top-level node almost always has
+  children. This optimization would be a correct no-op, not a real fix —
+  rejected as complexity without benefit.
+
+---
+
 ## How to verify these fixes yourself
 
 ```js

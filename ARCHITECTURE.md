@@ -17,7 +17,7 @@ Z.enable()
 
 ```
 MutationObserver ─┐
-poll (fallback) ───┼─► Observer.fire('mutation') ─► onMutationBatch ─► Optimizer.deferImages
+poll (fallback) ───┼─► Observer.fire('mutation') ─► onMutationBatch ─► Scheduler.add(low) ─► processMutationBatch ─► Optimizer.deferImages
                    │
 scroll/resize ─────┼─► Observer.fire('scroll'|'resize')  (rAF-throttled)
 visibilitychange ──┘─► Observer.fire('visibility') ─► pause/resume signal (emit only)
@@ -39,11 +39,17 @@ lookups on hot paths.
 
 ### Scheduler
 Two FIFO queues (`hi`, `lo`). `hi` drains on a time-budgeted `rAF` loop
-(12ms budget per frame); `lo` drains inside `requestIdleCallback` deadlines.
-Both queues shift synchronously (`Array.shift`) — acceptable at the queue
-depths this runtime expects (tens, not thousands, of pending callbacks per
-frame). If queue depth becomes an issue at scale, swap for a ring buffer;
-not done here because it would be an unmeasured, speculative change.
+(12ms budget per frame, widened 1.5x when `Adaptive` sets `idleBoost`);
+`lo` drains inside `requestIdleCallback` deadlines, capped at
+`Optimizer.config.chunk` items per idle tick. Both queues shift
+synchronously (`Array.shift`) — acceptable at the queue depths this
+runtime expects (tens, not thousands, of pending callbacks per frame). If
+queue depth becomes an issue at scale, swap for a ring buffer; not done
+here because it would be an unmeasured, speculative change.
+
+As of v0.3.9, `Observer`'s mutation-batch image scanning is itself routed
+through `Scheduler.add(fn, 'low')` rather than running inline in the
+`MutationObserver` flush callback — see `PERFORMANCE.md` Pass 3 for why.
 
 ### Observer
 Single `MutationObserver` (subtree, `childList` + optionally `attributes`),

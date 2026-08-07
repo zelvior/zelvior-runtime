@@ -1,6 +1,6 @@
 {
   "name": "zelvior-runtime",
-  "version": "0.3.9",
+  "version": "0.4.1",
   "description": "Dependency-free, adaptive browser runtime for lazy loading, scheduling, and self-tuning performance based on live device/browser conditions.",
   "license": "MIT",
   "author": "Zelvior",
@@ -25,7 +25,7 @@
   ],
   "type": "module",
   "sideEffects": false,
-  "main": "./dist/zelvior.cjs.js",
+  "main": "./dist/zelvior.cjs",
   "module": "./dist/zelvior.esm.js",
   "browser": "./dist/zelvior.js",
   "unpkg": "./dist/zelvior.min.js",
@@ -36,33 +36,39 @@
       "types": "./dist/zelvior.d.ts",
       "browser": "./dist/zelvior.js",
       "import": "./dist/zelvior.esm.js",
-      "require": "./dist/zelvior.cjs.js",
+      "require": "./dist/zelvior.cjs",
       "default": "./dist/zelvior.esm.js"
     },
     "./min": {
       "types": "./dist/zelvior.d.ts",
       "browser": "./dist/zelvior.min.js",
       "import": "./dist/zelvior.esm.min.js",
-      "require": "./dist/zelvior.cjs.min.js",
+      "require": "./dist/zelvior.min.cjs",
       "default": "./dist/zelvior.esm.min.js"
     },
     "./package.json": "./package.json"
   },
   "files": [
     "dist",
+    "landing-page",
+    "assets",
     "README.md",
     "ARCHITECTURE.md",
     "PERFORMANCE.md",
+    "ENGINEERING_REPORT.md",
     "CHANGELOG.md",
+    "BUNDLE_SIZES.md",
     "LICENSE"
   ],
   "engines": {
-    "node": ">=14"
+    "node": ">=12"
   },
   "scripts": {
-    "build": "node build.mjs"
+    "build": "node build.mjs",
+    "test": "node --test"
   },
   "devDependencies": {
-    "esbuild": "^0.24.0"
+    "esbuild": "^0.24.0",
+    "jsdom": "^25.0.0"
   }
 }

@@ -1,5 +1,78 @@
 # Changelog
 
+## Unreleased
+- Added the official logo mark (`assets/logo.png`), sourced from the
+  uploaded artwork, background-removed and cropped to a clean transparent
+  square. Used in this README, the landing page (header + favicon), and
+  regenerated as the extension's icon set (16/32/48/128px). The 16px icon
+  is inherently soft — the mark has enough fine internal linework that it
+  can't stay fully crisp at that size without simplifying the artwork
+  itself; this is a real, disclosed limitation, not something further
+  image processing fixes.
+
+## v0.4.0
+- **Fix (real, user-reported):** `require('zelvior-runtime')` threw
+  `ERR_REQUIRE_ESM` on Node without `require(esm)` support (stable only in
+  Node 22.12+/20.19+; every earlier Node, including the reporter's Node
+  12.22.3, hits this unconditionally) — despite this being the exact
+  CommonJS usage documented in this file's own README. Root cause: `main`
+  pointed at `dist/zelvior.cjs.js`, a CommonJS-formatted file, but the
+  package's `"type": "module"` makes Node treat any plain `.js` file in
+  the package as an ES module regardless of content — a classic dual-CJS/ESM-package
+  hazard. Fixed by renaming the CJS outputs to unambiguous `.cjs`/`.min.cjs`
+  extensions (Node always treats `.cjs` as CommonJS, independent of the
+  `"type"` field) and updating `main`/`exports.require` accordingly.
+  Verified with `node --no-experimental-require-module` to reproduce the
+  exact pre-Node-22 failure mode, confirming the fix.
+- `engines.node` lowered from `>=14` to `>=12`: the shipped `dist/` files
+  run in browsers and have no Node-version dependency at all; the
+  `engines` field was only gating `npm install`/build tooling, and `>=14`
+  was stricter than actually required. (`npm test`, which needs Node 18+
+  for the built-in test runner, remains a dev-only requirement — not
+  enforced by `engines`, documented separately in the Testing section.)
+- Clarified in `README.md`: the `npm WARN Zelvior No description` /
+  `No repository field` / `No README data` / `No license field` warnings
+  some users see are **not about this package** — `zelvior-runtime`'s own
+  `package.json` has all four fields. Older npm (6.x) auto-generates a stub
+  `package.json` in the current directory when you run `npm install` with
+  none present, and those warnings describe *that* stub, not the installed
+  package. Running `npm init -y` first (or installing inside an existing
+  project) avoids the warnings entirely.
+- **Found, not fixed here (no publish access to the live registry):** the
+  currently-published npm v0.3.9 tarball has a real version mismatch —
+  `package.json` says `0.3.9`, but the bundled `Z.version` string inside
+  `dist/zelvior.min.js` still says `0.3.8` (the dist/ wasn't rebuilt after
+  the version bump before publishing). Confirmed by downloading the actual
+  tarball from `registry.npmjs.org` and checking both strings directly.
+  This local v0.4.0 build has been double-checked to avoid the same
+  mistake — `package.json` and the runtime's own `Z.version` are both
+  `0.4.0`. Whoever next runs `npm publish` should rebuild (`npm run
+  build`) immediately before publishing, not just bump the version number.
+- Added `landing-page/index.html` — a real, working single-file landing
+  page for the project, loading the runtime live from the verified
+  jsDelivr CDN. See `README.md` for details.
+
+## v0.3.9
+- Perf: `Observer`'s mutation-batch processing (the per-added-node image
+  scan) is now dispatched through `Scheduler`'s existing low-priority idle
+  queue instead of running synchronously inside the `MutationObserver`
+  flush callback. This was informed by a user-submitted BrowserBench run on
+  legacy hardware showing regressions concentrated in high-DOM-churn,
+  low-image test cases (React/Preact/Angular/Backbone/jQuery Complex DOM)
+  alongside improvements in more render-heavy cases (Lit, Vue, Svelte,
+  Web Components) — see `PERFORMANCE.md` for the full analysis, including
+  what could and couldn't be verified without access to the original
+  hardware. This change moves Zelvior's own scanning cost off the
+  synchronous path competing with a page's own script execution; it has
+  **not** been re-verified against BrowserBench itself, only against a
+  jsdom-based regression suite confirming correctness is unchanged.
+- Added: `test/basic.test.mjs` — a real regression suite (Node's built-in
+  test runner + jsdom) covering every defect found during v0.3.2–v0.3.9
+  manual audits, run via `npm test`. Previously this verification was
+  ad-hoc and thrown away each session.
+- `package.json`: added `test` script and `jsdom` devDependency; added
+  `BUNDLE_SIZES.md` to the published `files` list.
+
 ## v0.3.8
 - Fix: `Observer.start()` only created a `MutationObserver` when
   `cfg.observeAttrs` was true. Once `Adaptive` degraded to `efficient`/`max`

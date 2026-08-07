@@ -31,7 +31,7 @@ var Zelvior = (() => {
     Scheduler: () => Scheduler,
     default: () => zelvior_default
   });
-  var Z = { version: "0.3.8" };
+  var Z = { version: "0.4.0" };
   var enabled = false;
   var doc = document;
   var win = window;
@@ -921,7 +921,7 @@ var Zelvior = (() => {
   function deferImagesOf(root) {
     Optimizer.deferImages(root);
   }
-  function onMutationBatch(batch) {
+  function processMutationBatch(batch) {
     for (var i = 0; i < batch.length; i++) {
       var m = batch[i];
       if (m.type === "childList" && m.addedNodes) {
@@ -939,6 +939,11 @@ var Zelvior = (() => {
         safe1(deferImagesOf, doc);
       }
     }
+  }
+  function onMutationBatch(batch) {
+    Scheduler.add(function() {
+      processMutationBatch(batch);
+    }, "low");
   }
   function onVisibilityChange(d) {
     emit(d.hidden ? "paused" : "resumed", {});

@@ -1,7 +1,7 @@
 // Zelvior Runtime v0.3 — MIT
 // ESM source of truth; bundled to esm/cjs/iife by build.mjs
 
-  var Z = { version: '0.3.8' };
+  var Z = { version: '0.4.0' };
   var enabled = false;
   var doc = document, win = window, DE = doc.documentElement;
   var subs = {};
@@ -485,7 +485,7 @@
   })();
 
   function deferImagesOf(root) { Optimizer.deferImages(root); }
-  function onMutationBatch(batch) {
+  function processMutationBatch(batch) {
     for (var i = 0; i < batch.length; i++) {
       var m = batch[i];
       if (m.type === 'childList' && m.addedNodes) {
@@ -499,6 +499,7 @@
       } else if (m.type === 'poll') { safe1(deferImagesOf, doc); }
     }
   }
+  function onMutationBatch(batch) { Scheduler.add(function () { processMutationBatch(batch); }, 'low'); }
   function onVisibilityChange(d) { emit(d.hidden ? 'paused' : 'resumed', {}); }
   var sweepId = 0, sweepRunning = false;
   function sweepTick() { sweepId = 0; if (!sweepRunning) return; safe0(Memory.sweep); sweepLoop(); }

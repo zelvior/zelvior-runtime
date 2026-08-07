@@ -1,11 +1,28 @@
+<img src="./assets/logo-240.png" width="96" height="96" alt="Zelvior logo">
+
 # zelvior-runtime
 
 [![npm](https://img.shields.io/npm/v/zelvior-runtime)](https://www.npmjs.com/package/zelvior-runtime)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 Dependency-free, adaptive browser runtime for lazy-loading, scheduling, and
-self-tuning performance based on live device/browser conditions. **~15.4KB
-minified, ~5.7KB gzipped, zero runtime dependencies.**
+self-tuning performance based on live device/browser conditions. **~16.2KB
+minified, ~6.0KB gzipped, zero runtime dependencies.**
+
+> **Version note:** this package is at v0.4.0 locally; the npm badge above
+> reflects the latest *published* release (v0.3.9 at time of writing — the
+> maintainer published v0.3.9 shortly after it was prepared here). v0.4.0
+> fixes a real `require()` failure on Node <22 caused by v0.3.9's CJS
+> build — see the CHANGELOG below before publishing v0.3.9 further, or
+> publish v0.4.0 directly instead.
+
+> **About `npm WARN Zelvior No description`/`No repository field`/etc.:**
+> if you see these while running `npm install zelvior-runtime`, they are
+> **not about this package** (which has all four fields — check
+> `package.json` yourself). Older npm (6.x) auto-creates a stub
+> `package.json` in your current directory when none exists, and warns
+> about *that* stub. Run `npm init -y` first, or install inside an
+> existing project, to avoid seeing them.
 
 ## Install
 
@@ -120,17 +137,82 @@ pre-ES2017 targets, transpile the ESM/CJS build with your own toolchain (the
 runtime's own logic uses no ES2017+ *runtime* features beyond what
 `es2017` target implies, only syntax).
 
+## Benchmarks
+
+Results vary significantly by browser, framework, hardware, and workload —
+Zelvior does not have a single "X% faster" number, and any such claim
+should be treated skeptically regardless of source.
+
+One community-submitted [BrowserBench](https://github.com/krausest/js-framework-benchmark)-style
+run on a 2009 Intel Atom laptop (1GB DDR2) via the browser extension showed
+a mixed pattern rather than a uniform speedup:
+
+| Result | Frameworks |
+|---|---|
+| Improved | JS ES5 (-41%), Lit Complex DOM (-30%), Vue (-19%), Svelte (-19%), ES6/Webpack (-18%), Web Components (-8%) |
+| Regressed | jQuery (+24%), Preact (+21%), React Complex DOM (+22%), Angular Complex DOM (+16%), Backbone (+10%) |
+
+(percentages are change in duration; negative = faster, positive = slower)
+
+The regressed cases share a pattern: high-frequency DOM insertion with few
+or no images, where Zelvior's own mutation-observer bookkeeping was, prior
+to v0.3.9, executed synchronously and added measurable overhead with no
+corresponding benefit (nothing to lazy-load). v0.3.9 moves that bookkeeping
+onto the existing idle scheduler; see
+[PERFORMANCE.md](./PERFORMANCE.md) for the full mechanism, and note that
+this fix has **not** been re-verified against the original benchmark or
+hardware — only against a jsdom-based correctness suite. If you have
+before/after numbers on real hardware, they're genuinely useful — please
+open an issue.
+
+The improved cases are render/paint-heavy workloads where deferring
+off-screen image work and cooperative scheduling has a clearer,
+lower-risk benefit.
+
 ## TypeScript
 
 Type declarations ship in `dist/zelvior.d.ts` and are resolved automatically
 via the `types` field/`exports` map — no `@types/zelvior-runtime` package
 needed.
 
+## Testing
+
+```bash
+npm install   # pulls in the jsdom devDependency
+npm test      # runs test/basic.test.mjs via Node's built-in test runner
+```
+
+The suite runs the actual built `dist/zelvior.js` inside jsdom — a real,
+independent DOM implementation — and exists specifically to catch the kind
+of defect that only surfaces against spec-correct DOM behavior (e.g. the
+`MutationObserver` `attributeFilter` bug fixed in v0.3.8).
+
+`npm test` requires Node 18+ (Node's built-in test runner). This is a
+dev-only requirement for *contributing to* the package, separate from
+`engines.node` (`>=12`), which covers what's needed to *install and use*
+it — the shipped `dist/` files themselves have no Node dependency at all
+since they run in browsers.
+
+## Landing page
+
+`landing-page/index.html` is a real, working single-file demo page —
+open it directly in a browser, no build step. It loads the runtime live
+from jsDelivr:
+
+```html
+<script src="https://cdn.jsdelivr.net/npm/zelvior-runtime/dist/zelvior.min.js"></script>
+<script>Zelvior.enable();</script>
+```
+
+(that exact snippet was checked against the live CDN before being used
+here — `curl`/fetch confirmed jsDelivr serves real content for this
+package, not a 404 placeholder.)
+
 ## Documentation
 
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — subsystem internals and data flow
 - [PERFORMANCE.md](./PERFORMANCE.md) — full audit log: every defect found, why it mattered, and the fix
-- [CHANGELOG.md](./CHANGELOG.md) — version history (v0.3.8: fixed a real MutationObserver blackout after degraded re-enable, and images now skip deferral when already in-viewport or explicitly marked `eager`/`fetchpriority=high` — protects LCP instead of delaying it)
+- [CHANGELOG.md](./CHANGELOG.md) — version history (v0.4.0: fixed a real `ERR_REQUIRE_ESM` failure in `require('zelvior-runtime')` on Node <22, lowered `engines.node` to match what's actually required, added a working landing page)
 
 ## Building from source
 

@@ -49,8 +49,8 @@ async function main() {
   const targets = [
     { format: 'esm', outfile: 'dist/zelvior.esm.js', minify: false },
     { format: 'esm', outfile: 'dist/zelvior.esm.min.js', minify: true },
-    { format: 'cjs', outfile: 'dist/zelvior.cjs.js', minify: false },
-    { format: 'cjs', outfile: 'dist/zelvior.cjs.min.js', minify: true },
+    { format: 'cjs', outfile: 'dist/zelvior.cjs', minify: false },
+    { format: 'cjs', outfile: 'dist/zelvior.min.cjs', minify: true },
     { format: 'iife', outfile: 'dist/zelvior.js', minify: false, globalName: 'Zelvior', footer: iifeFooter },
     { format: 'iife', outfile: 'dist/zelvior.min.js', minify: true, globalName: 'Zelvior', footer: iifeFooter },
   ];
