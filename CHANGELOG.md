@@ -1,5 +1,88 @@
 # Changelog
 
+## v0.3.8
+- Fix: `Observer.start()` only created a `MutationObserver` when
+  `cfg.observeAttrs` was true. Once `Adaptive` degraded to `efficient`/`max`
+  (`observeAttrs: 0`) and the runtime was `disable()`d and `enable()`d again
+  in that state, neither the `MutationObserver` nor the polling fallback
+  engaged — dynamically-added images silently stopped being lazy-loaded for
+  the rest of that session, a real regression in exactly the degraded/janky
+  conditions the adaptive system exists to handle. `MutationObserver` is
+  now always created when supported; only whether it also watches attribute
+  changes is gated by `observeAttrs`. Caught and fixed a self-introduced
+  regression in the same change (`attributeFilter` must not be passed
+  unless `attributes: true` — real DOM spec requirement, throws in every
+  spec-compliant browser otherwise) before shipping, verified against a
+  real jsdom `MutationObserver` end-to-end.
+- Perf: images already inside the initial viewport, or explicitly marked
+  `loading="eager"` / `fetchpriority="high"` by the page author, are no
+  longer deferred. Previously every image had its `src` stripped and
+  reloaded through the observer round-trip regardless of author intent or
+  initial visibility — for above-the-fold/LCP images that added latency to
+  the exact request that matters most for perceived load speed, and
+  overrode explicit author opt-outs. Verified in jsdom: both signals now
+  correctly skip deferral while off-screen images are unaffected.
+
+## v0.3.7
+- No functional changes to the runtime itself — version bump to bring
+  `zelvior-runtime` and `zelvior-extension` back onto a matched version
+  number after the v0.3.6 extension-only fix. Rebuilt and re-verified
+  end-to-end against jsdom (real `enable()`, real `MutationObserver`
+  picking up a live-appended `<img>`, `Recycler` attribute-stripping,
+  `Metrics.snapshot()` shape, clean `disable()`) with identical results to
+  v0.3.5.
+
+## v0.3.5 — critical build-pipeline fix
+**What happened:** starting at v0.3.2, edits were mistakenly applied to the
+wrong file. `runtime/src/zelvior.js` (the true ESM source) and
+`extension/src/zelvior.js` (a *copy of the built bundle*, per the
+extension's own documented sync process) share the same filename. When
+both package archives were extracted into one working directory, the
+extension's copy — an already-bundled, self-executing IIFE — silently
+overwrote the true ESM source. Every subsequent edit (v0.3.2–v0.3.4) was
+made against that bundled artifact and then re-run through `build.mjs`,
+which bundles its input a second time. The result: `dist/zelvior.js` (and
+`.min.js`) contained a broken **nested double-IIFE** — the outer
+esbuild-generated wrapper never returned a value, so `window.Zelvior` (and
+`Zelvior.default`) ended up `undefined` at the point the footer tried to
+flatten the namespace onto it. `dist/zelvior.esm.js`/`.cjs.js` happened to
+still run without throwing (which is all the prior verification checked —
+"does requiring it throw?"), but not because their actual export shape was
+verified correct.
+**The fix:** restored the true, uncorrupted ESM source from the original
+v0.3.1 package, reapplied every genuine v0.3.2–v0.3.4 logic change to it by
+hand (adaptive `chunk`/`idleBoost` wiring, fallback listener consolidation,
+`decoding="async"`, hidden-tab guards on `Metrics`/`Adaptive`, DOM-count
+throttling, `Recycler` full attribute reset, mutation-batch closure
+hoisting — see v0.3.2–v0.3.4 entries below, all still accurate), and
+rebuilt from that corrected source. Verified this time by actually loading
+the built `dist/zelvior.js` in **jsdom** (a real, independent DOM
+implementation) and exercising it end-to-end: `Zelvior.enable()`, real
+`MutationObserver` picking up a live-appended `<img>` and deferring it,
+`Recycler.acquire()` stripping every attribute off a reused node,
+`Metrics.snapshot()` returning the expected shape, and a clean `disable()`
+— not a hand-rolled mock standing in for the DOM.
+**Net effect on this version:** identical logic to what was intended for
+v0.3.2–v0.3.4; the bundled output is smaller than those releases' broken
+builds (28.7KB ESM / 32KB IIFE vs. the corrupted builds' inflated,
+duplicated-footer sizes) because it's compiled from the correct
+single-level source instead of a doubly-wrapped one.
+
+## v0.3.4
+- Perf: `Adaptive`'s idle-probe (2s) and decision (2.5s) timers now skip
+  their work while the tab is `document.hidden`, matching the same
+  hidden-tab guard already applied to `Metrics` in v0.3.3 — no more
+  wasted busy-ratio probing/decision math (and its `setTimeout` wakeups)
+  running against a backgrounded, throttled page.
+- Fix: `Recycler.acquire()` only reset a reused node's `className`,
+  leaving any other stale attribute (`style`, `id`, `data-*`, ARIA)
+  from its previous life on the node. It now strips every attribute
+  before handing the node back out, so recycled nodes are actually clean.
+- Perf: `onMutationBatch`'s per-mutation-node image-defer callback was
+  allocated as a fresh closure on every single added DOM node — now
+  hoisted to a shared module-level function, matching the closure-hoisting
+  policy already applied elsewhere (see v0.2.0).
+
 ## v0.3.3
 - Fix: `Metrics` ran a full `document.getElementsByTagName("*")` DOM-count
   traversal every 500ms tick, forever, regardless of whether anything was
