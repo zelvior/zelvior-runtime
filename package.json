@@ -1,6 +1,6 @@
 {
   "name": "zelvior-runtime",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Dependency-free, adaptive browser runtime for lazy loading, scheduling, and self-tuning performance based on live device/browser conditions.",
   "license": "MIT",
   "author": "Zelvior",
@@ -45,6 +45,42 @@
       "import": "./dist/zelvior.esm.min.js",
       "require": "./dist/zelvior.min.cjs",
       "default": "./dist/zelvior.esm.min.js"
+    },
+    "./events": {
+      "types": "./dist/events.d.ts",
+      "import": "./dist/events.esm.js",
+      "require": "./dist/events.cjs",
+      "default": "./dist/events.esm.js"
+    },
+    "./events/min": {
+      "types": "./dist/events.d.ts",
+      "import": "./dist/events.esm.min.js",
+      "require": "./dist/events.min.cjs",
+      "default": "./dist/events.esm.min.js"
+    },
+    "./dom": {
+      "types": "./dist/dom.d.ts",
+      "import": "./dist/dom.esm.js",
+      "require": "./dist/dom.cjs",
+      "default": "./dist/dom.esm.js"
+    },
+    "./dom/min": {
+      "types": "./dist/dom.d.ts",
+      "import": "./dist/dom.esm.min.js",
+      "require": "./dist/dom.min.cjs",
+      "default": "./dist/dom.esm.min.js"
+    },
+    "./scroll": {
+      "types": "./dist/scroll.d.ts",
+      "import": "./dist/scroll.esm.js",
+      "require": "./dist/scroll.cjs",
+      "default": "./dist/scroll.esm.js"
+    },
+    "./scroll/min": {
+      "types": "./dist/scroll.d.ts",
+      "import": "./dist/scroll.esm.min.js",
+      "require": "./dist/scroll.min.cjs",
+      "default": "./dist/scroll.esm.min.js"
     },
     "./package.json": "./package.json"
   },

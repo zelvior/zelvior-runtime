@@ -31,7 +31,7 @@ var Zelvior = (() => {
     Scheduler: () => Scheduler,
     default: () => zelvior_default
   });
-  var Z = { version: "0.4.0" };
+  var Z = { version: "0.5.0" };
   var enabled = false;
   var doc = document;
   var win = window;

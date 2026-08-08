@@ -9,12 +9,22 @@ Dependency-free, adaptive browser runtime for lazy-loading, scheduling, and
 self-tuning performance based on live device/browser conditions. **~16.2KB
 minified, ~6.0KB gzipped, zero runtime dependencies.**
 
-> **Version note:** this package is at v0.4.0 locally; the npm badge above
-> reflects the latest *published* release (v0.3.9 at time of writing — the
-> maintainer published v0.3.9 shortly after it was prepared here). v0.4.0
-> fixes a real `require()` failure on Node <22 caused by v0.3.9's CJS
-> build — see the CHANGELOG below before publishing v0.3.9 further, or
-> publish v0.4.0 directly instead.
+> **Version note:** this package is at v0.5.0 locally; npm's latest
+> published release is v0.4.1 at time of writing (already includes the
+> `require()`/`engines.node` fixes documented under v0.4.0 below — the
+> maintainer published those). v0.5.0 (this version) adds the standalone
+> `events`/`dom`/`scroll` modules and the subpath `exports` for them, none
+> of which are in v0.4.1 yet. Core runtime behavior is unchanged either
+> way.
+>
+> **Recurring publish-process issue, found again:** the published v0.4.1
+> tarball has the same version-mismatch bug as v0.3.9 did —
+> `package.json` says `0.4.1`, but the bundled `Z.version` string inside
+> `dist/zelvior.min.js` still says `0.4.0` (confirmed by downloading the
+> actual tarball from `registry.npmjs.org`). This means `dist/` isn't
+> being rebuilt immediately before `npm publish`, twice now. This local
+> build has been checked and both strings agree (`0.5.0`/`0.5.0`) — see
+> `CHANGELOG.md` v0.4.0 for the first occurrence of this finding.
 
 > **About `npm WARN Zelvior No description`/`No repository field`/etc.:**
 > if you see these while running `npm install zelvior-runtime`, they are
@@ -76,6 +86,115 @@ three; see [Formats](#formats) for exactly what each build exposes.
 | `Zelvior.disable()` | Stops everything and releases all timers/observers/listeners. |
 | `Zelvior.isEnabled()` | Boolean. |
 | `Zelvior.features` | Feature-detection map (`raf`, `ric`, `moc`, `ioc`, `po`, `mem`, `cle`, `ma`, `vis`, `perf`). |
+
+## Modules (standalone, zero-coupling)
+
+Unlike the subsystems above, these are genuinely separate from the core
+runtime — importing one does not pull in `Zelvior` or any other module.
+None of them are loaded or run unless you import them; none change any
+browser default behavior on their own. Added in v0.5.0.
+
+### `zelvior-runtime/events`
+
+Event helpers with no DOM/runtime dependency beyond what you pass in.
+
+```js
+import { passiveOpts, throttleRaf, debounce, onFrame, onIdle, delegate } from 'zelvior-runtime/events';
+```
+
+| Export | What it does | Why it exists |
+|---|---|---|
+| `passiveOpts(capture?)` | Returns feature-detected `{passive:true}` (or a boolean fallback on browsers that throw on the object form, e.g. old Safari/IE). | Passive listeners let the compositor scroll without waiting on your handler — real, well-established win, not speculative. |
+| `throttleRaf(fn)` | Coalesces rapid calls to at most one per animation frame; returns the throttled fn with a `.cancel()`. | For scroll/resize/pointermove handlers where only the latest call in a frame matters. |
+| `debounce(fn, wait)` | Trailing-edge debounce; returns the debounced fn with a `.cancel()`. | Distinct from `throttleRaf` — for "settled" events (search input, resize-end), not per-frame coalescing. |
+| `onFrame(fn)` | `requestAnimationFrame` with a `setTimeout(16)` fallback. Returns a cancel function. | Cross-browser rAF without pulling in the whole runtime. |
+| `onIdle(fn, opts?)` | `requestIdleCallback` with a `setTimeout(1)` fallback. Returns a cancel function. | Same, for idle scheduling. |
+| `delegate(root, selector, type, handler, opts?)` | One listener on `root` instead of one per matching descendant; calls `handler(event, matchedElement)`. Returns an unsubscribe function. | Real overhead reduction for lists/tables — N listeners collapse to 1. |
+
+**Browser compatibility:** works everywhere `addEventListener` exists.
+`passiveOpts` falls back to a boolean on browsers without passive-listener
+support (feature-detected at runtime, not assumed). `throttleRaf`/`onFrame`
+fall back to `setTimeout(16)` without `requestAnimationFrame`; `onIdle`
+falls back to `setTimeout(1)` without `requestIdleCallback` (same pattern
+the core runtime already uses internally, now standalone).
+
+**Performance considerations:** `throttleRaf`/`debounce` reduce call
+*count*, which is straightforwardly verifiable (see `test/modules.test.mjs`)
+— they cannot make an individual call faster, only reduce how many happen.
+`delegate` reduces listener *count*, not per-event handling cost.
+
+**Does it modify native browser behavior?** No. These only affect how
+*your own* handlers are registered/invoked.
+
+### `zelvior-runtime/dom`
+
+```js
+import { read, write, clear } from 'zelvior-runtime/dom';
+```
+
+A fastdom-style batched read/write scheduler. `read(fn)` queues a DOM-read
+callback (`getBoundingClientRect`, `offsetWidth`, etc.); `write(fn)` queues
+a DOM-write callback (style/attribute/class changes). All reads queued in
+a frame run before all writes queued in that frame, avoiding the forced-
+synchronous-layout cost of interleaving them from independent call sites.
+`clear(id)` cancels a queued read or write using the id either function
+returns.
+
+**Why this exists and not a `classList`/attribute wrapper:** native
+`classList` is already fast — wrapping it adds call overhead for zero
+benefit, so this module deliberately doesn't. Batched read/write
+scheduling is the one DOM utility here with a clear, well-established
+mechanism (see: the "batch your DOM reads and writes" guidance in browser
+rendering-performance documentation, and libraries like `fastdom` that
+popularized the pattern).
+
+**Browser compatibility:** works everywhere; falls back to `setTimeout(16)`
+without `requestAnimationFrame`.
+
+**Performance considerations, honestly stated:** the *mechanism* (avoiding
+interleaved layout) is well-established, but this sandbox has no real
+browser/layout engine available to benchmark the actual layout-thrashing
+cost it avoids — see `PERFORMANCE.md` for what was and wasn't measured.
+What **is** verified (in `test/modules.test.mjs`): reads always run before
+writes queued in the same frame, `clear()` actually cancels, an exception
+in one callback doesn't stop the rest from running, and re-entrant
+scheduling (a callback that queues another callback) resolves across
+frames rather than hanging.
+
+**Does it modify native browser behavior?** No — it only defers when your
+own callbacks run; it doesn't touch how the browser itself lays out or
+paints.
+
+### `zelvior-runtime/scroll`
+
+```js
+import { onScroll } from 'zelvior-runtime/scroll';
+
+const unsubscribe = onScroll(({ x, y, target }) => { /* ... */ });
+// or: onScroll(myScrollableDiv, (info) => { ... });
+unsubscribe(); // removes the listener and cancels any pending call
+```
+
+A passive, `requestAnimationFrame`-throttled scroll listener. Built on
+`events.js`'s `passiveOpts`/`throttleRaf` (small, no logic duplicated).
+
+**This module deliberately does not include a custom scrollbar or replace
+native scrolling in any way.** There is no benchmark evidence that native
+scrolling needs replacing, and a custom scrollbar is real CSS/DOM/
+accessibility surface for a browser feature that already performs well —
+adding one without justification is exactly what this project's own
+guidelines caution against. What genuinely has a measurable cost is
+*listening* carelessly: a non-passive listener can block the compositor
+from scrolling ahead of the main thread, and an unthrottled handler can
+run far more often than once per frame. That's the only thing this module
+addresses.
+
+**Browser compatibility:** works everywhere `addEventListener` exists;
+inherits `events.js`'s passive/rAF fallbacks.
+
+**Does it modify native browser behavior?** No. Scrolling itself is
+completely untouched — only how your own handler is attached and how
+often it runs.
 
 ## Subsystems
 
@@ -212,7 +331,7 @@ package, not a 404 placeholder.)
 
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — subsystem internals and data flow
 - [PERFORMANCE.md](./PERFORMANCE.md) — full audit log: every defect found, why it mattered, and the fix
-- [CHANGELOG.md](./CHANGELOG.md) — version history (v0.4.0: fixed a real `ERR_REQUIRE_ESM` failure in `require('zelvior-runtime')` on Node <22, lowered `engines.node` to match what's actually required, added a working landing page)
+- [CHANGELOG.md](./CHANGELOG.md) — version history (v0.5.0: three new standalone, zero-coupling modules — `events`, `dom`, `scroll` — see the Modules section above; core runtime untouched)
 
 ## Building from source
 

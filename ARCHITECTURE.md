@@ -5,6 +5,34 @@ from independent, lazily-wired subsystems. No subsystem imports another via
 module boundaries — they call each other directly as closures within the
 same IIFE scope, and are only "connected" when `Z.enable()` runs.
 
+## Repository layout
+
+```
+src/
+  zelvior.js       core runtime (single file, IIFE-bundled — see below)
+  zelvior.d.ts
+  modules/         standalone, zero-coupling utilities (added v0.5.0)
+    events.js      passiveOpts, throttleRaf, debounce, onFrame, onIdle, delegate
+    dom.js         read/write batched DOM scheduler
+    scroll.js      passive + rAF-throttled scroll listener (imports events.js)
+dist/              built output (esm/cjs/iife × core, + esm/cjs × each module)
+test/              node:test + jsdom
+landing-page/      standalone demo page, loads the runtime from jsDelivr
+```
+
+**Core vs. modules — an intentional architectural split, not an
+oversight.** `src/zelvior.js` is one file because its subsystems
+(`Scheduler`, `Observer`, `Adaptive`, etc.) are *meant* to share internal
+state and call each other directly — that coupling is the point (see
+"Data flow" below). `src/modules/*.js` are separate files because they're
+*meant not to* couple to the core or to each other beyond an explicit
+`import` at the source level (`scroll.js` imports from `events.js`;
+esbuild inlines that at build time, so `zelvior-runtime/scroll` alone
+never pulls in a separate `events.js` file or any of the core runtime).
+Importing a module never loads or runs the core runtime, and vice versa —
+verified by bundle-size measurement (core `dist/zelvior.js` is
+byte-identical before and after the modules were added).
+
 ```
 Z.enable()
  ├─ Observer.start()      → MutationObserver / poll, resize, scroll, visibilitychange

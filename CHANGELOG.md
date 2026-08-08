@@ -1,14 +1,84 @@
 # Changelog
 
-## Unreleased
-- Added the official logo mark (`assets/logo.png`), sourced from the
-  uploaded artwork, background-removed and cropped to a clean transparent
-  square. Used in this README, the landing page (header + favicon), and
+## v0.5.0
+
+### Added
+- `zelvior-runtime/events` — standalone event helpers: `passiveOpts`,
+  `throttleRaf`, `debounce`, `onFrame`, `onIdle`, `delegate`. Zero coupling
+  to the core runtime or to each other's dist output.
+- `zelvior-runtime/dom` — standalone batched DOM read/write scheduler
+  (`read`, `write`, `clear`), fastdom-style.
+- `zelvior-runtime/scroll` — standalone passive + rAF-throttled scroll
+  listener (`onScroll`), built on `events.js`.
+- `src/modules/*.d.ts` — type declarations for all three, wired into
+  `package.json` `exports` (`./events`, `./events/min`, `./dom`,
+  `./dom/min`, `./scroll`, `./scroll/min`).
+- `test/modules.test.mjs` — 15 new tests covering normal usage, missing
+  optional params, `.cancel()`/unsubscribe correctness, repeated
+  subscribe/unsubscribe cycles (no listener accumulation), exception
+  isolation between queued callbacks, and re-entrant scheduling (a
+  callback that queues another callback resolves across frames rather
+  than hanging). 23/23 total tests passing (8 existing + 15 new).
+- The official logo mark (`assets/logo.png`), sourced from the uploaded
+  artwork, background-removed and cropped to a clean transparent square.
+  Used in this README, the landing page (header + favicon), and
   regenerated as the extension's icon set (16/32/48/128px). The 16px icon
   is inherently soft — the mark has enough fine internal linework that it
   can't stay fully crisp at that size without simplifying the artwork
   itself; this is a real, disclosed limitation, not something further
   image processing fixes.
+
+### Changed
+- Nothing in the existing public API changed. `src/zelvior.js` (the core
+  runtime) is untouched beyond the version-string bump — every existing
+  export, behavior, and signature is exactly as in v0.4.0.
+- `build.mjs` now also builds the three new module entries (ESM+CJS,
+  normal+minified) alongside the existing core targets.
+
+### Performance
+- Core `zelvior.js` bundle size is **unchanged** (32,902 bytes IIFE /
+  16,212 bytes minified — byte-identical to v0.4.0) — confirms the new
+  modules add zero cost to anyone not importing them.
+- New module sizes (minified, gzipped): `events` 738B, `dom` 456B,
+  `scroll` 641B (`scroll` includes `events`'s `passiveOpts`/`throttleRaf`
+  inlined by esbuild, so importing `scroll` alone still doesn't pull a
+  separate `events.js`).
+- `throttleRaf`/`debounce` call-count reduction and `delegate` listener-
+  count reduction are directly verified (deterministic test assertions,
+  not timing-dependent). The `dom` module's batched-read/write scheduling
+  mechanism is well-established (fastdom and similar) but its actual
+  layout-thrashing-avoidance benefit was **not** independently
+  benchmarked here — this sandbox has no real browser/layout engine to
+  measure it against. See `PERFORMANCE.md` ("Pass 4") for the full,
+  honest breakdown of what was and wasn't verified, claim by claim.
+- No custom scrollbar and no separate animation module were implemented
+  — both considered and explicitly rejected for lack of benchmark
+  evidence that native behavior needs replacing. See `PERFORMANCE.md`
+  and the README's Modules section for the reasoning.
+
+### Fixed
+- `dom.js`'s `safeRun` error-reporting path could itself throw
+  (if `console.error` throws, unusual but possible in some sandboxed
+  environments) and silently abort the rest of that frame's queued
+  callbacks. Found via a test asserting a second `write()` callback still
+  runs after a first one throws; fixed by isolating the error-reporting
+  call in its own try/catch.
+
+### Compatibility
+- No breaking changes. Existing `zelvior-runtime` (core) imports,
+  `require()`, `<script>` tag usage, and the browser extension are all
+  unaffected — the new modules are additive, separately-imported, and
+  never loaded unless explicitly requested.
+- New modules use the same fallback conventions as the core runtime
+  (`requestAnimationFrame`→`setTimeout(16)`, `requestIdleCallback`→
+  `setTimeout(1)`, feature-detected passive-listener support) — no new
+  minimum browser version introduced.
+- **Found again, not fixed here (no publish access):** the v0.3.9→v0.4.1
+  dist/`Z.version` mismatch first found and documented under v0.4.0 below
+  has recurred — published v0.4.1's `package.json` says `0.4.1`, its
+  bundled `Z.version` string still says `0.4.0`. `dist/` isn't being
+  rebuilt immediately before publish, twice now. This local v0.5.0 build
+  has both strings verified equal.
 
 ## v0.4.0
 - **Fix (real, user-reported):** `require('zelvior-runtime')` threw

@@ -37,6 +37,9 @@ async function main() {
 
   mkdirSync('dist', { recursive: true });
   copyFileSync('src/zelvior.d.ts', 'dist/zelvior.d.ts');
+  for (const name of ['events', 'dom', 'scroll']) {
+    copyFileSync(`src/modules/${name}.d.ts`, `dist/${name}.d.ts`);
+  }
 
   const entry = 'src/zelvior.js';
   const banner = { js: '// Zelvior Runtime — MIT — https://github.com/zelvior/zelvior-runtime' };
@@ -55,9 +58,28 @@ async function main() {
     { format: 'iife', outfile: 'dist/zelvior.min.js', minify: true, globalName: 'Zelvior', footer: iifeFooter },
   ];
 
+  // Standalone, tree-shakeable submodules (src/modules/*.js). Each is fully
+  // independent of core zelvior.js and of each other's bundle output (they
+  // may *import* one another at the source level -- e.g. scroll.js imports
+  // events.js -- but esbuild inlines that at build time, so consumers of
+  // just "zelvior-runtime/scroll" never pull in a separate events.js file
+  // or the core runtime). ESM + CJS only: these are for bundler/import
+  // consumers who want tree-shaking; script-tag/CDN users already have the
+  // full Zelvior global from the targets above.
+  const moduleNames = ['events', 'dom', 'scroll'];
+  for (const name of moduleNames) {
+    const modEntry = `src/modules/${name}.js`;
+    targets.push(
+      { format: 'esm', outfile: `dist/${name}.esm.js`, minify: false, entry: modEntry },
+      { format: 'esm', outfile: `dist/${name}.esm.min.js`, minify: true, entry: modEntry },
+      { format: 'cjs', outfile: `dist/${name}.cjs`, minify: false, entry: modEntry },
+      { format: 'cjs', outfile: `dist/${name}.min.cjs`, minify: true, entry: modEntry },
+    );
+  }
+
   for (const t of targets) {
     await build({
-      entryPoints: [entry],
+      entryPoints: [t.entry || entry],
       bundle: true,
       format: t.format,
       outfile: t.outfile,

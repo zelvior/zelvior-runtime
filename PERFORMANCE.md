@@ -212,6 +212,40 @@ after this update, that result is the real evidence — please share it.**
 
 ---
 
+## Pass 4 (v0.5.0) — new standalone modules: what was and wasn't benchmarked
+
+Three new zero-coupling modules (`events`, `dom`, `scroll`) were added.
+Per this project's own policy (benchmark before claiming a performance
+win; if it can't be verified, say so and keep the feature opt-in), here's
+exactly what each claim rests on:
+
+| Claim | Basis | Confidence |
+|---|---|---|
+| Core `zelvior.js` bundle size is completely unaffected by these additions | Direct measurement: `dist/zelvior.js`/`.min.js` byte-for-byte identical before and after (32,902 / 16,212 bytes) | Verified fact |
+| `throttleRaf`/`debounce` reduce call *count* | Deterministic, non-timing-dependent test assertions (`test/modules.test.mjs`) — 3 rapid calls produce exactly 1 invocation | Verified fact |
+| `delegate` reduces listener *count* from N to 1 | Same — directly countable, not a timing claim | Verified fact |
+| Passive listeners let the compositor scroll without waiting on the handler | Well-established browser behavior (not unique to this project), feature-detected correctly rather than assumed | High confidence, not independently re-benchmarked here |
+| Batched read/write avoids forced-synchronous-layout cost | Well-established pattern (fastdom and others), mechanism is sound | **Not benchmarked** — this sandbox has no real browser/layout engine to measure actual layout-thrashing cost against. jsdom does no layout at all, so it can confirm the *scheduling order* (reads before writes) but cannot measure the *layout cost saved*, which is the actual point of the feature |
+| Any of the above outperforms hand-written equivalent code on real hardware | Not claimed anywhere in the README/CHANGELOG for exactly this reason | N/A — not asserted |
+
+Every new module is opt-in (separate import path, zero effect on anyone
+not importing it) specifically because of the above — where a mechanism
+is well-established but not independently re-verified here, the honest
+position is "opt-in and documented," not "default-on and asserted faster."
+
+**A real bug found and fixed while building the test suite for this
+pass, not a benchmark finding:** `dom.js`'s error-swallowing wrapper
+(`safeRun`) caught exceptions from queued callbacks and reported them via
+`console.error`, but didn't guard *that* call — if `console.error` itself
+threw (unusual, but possible in some embedded/sandboxed environments),
+the exception would propagate out of the flush loop and skip every
+remaining queued callback, not just the one that errored. Caught by a
+test asserting that a second `write()` callback still runs after a first
+one throws; fixed by wrapping the `console.error` call in its own
+try/catch.
+
+---
+
 ## How to verify these fixes yourself
 
 ```js
