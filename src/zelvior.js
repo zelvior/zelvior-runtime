@@ -1,7 +1,7 @@
 // Zelvior Runtime v0.3 — MIT
 // ESM source of truth; bundled to esm/cjs/iife by build.mjs
 
-  var Z = { version: '0.5.0' };
+  var Z = { version: '0.5.1' };
   var enabled = false;
   var doc = document, win = window, DE = doc.documentElement;
   var subs = {};

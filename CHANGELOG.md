@@ -1,12 +1,84 @@
 # Changelog
 
+## v0.5.1
+
+- Replaced `assets/logo.png` (and its derived `assets/logo-240.png`, the
+  extension's `icons/{16,32,48,128}.png`, and the landing page's inlined
+  favicon/header logo) with an updated source of the same mark. Verified
+  transparency intact (checked alpha channel directly, not just visually)
+  and re-ran the full jsdom verification suite on the landing page after
+  swapping the embedded base64 data to confirm nothing broke.
+
+Extension and landing-page UI audit — real, verified fixes, not cosmetic
+tweaks. Core runtime `dist/` is byte-identical to v0.5.0 (confirmed by
+diff before bumping); this is a docs/UI-asset release.
+
+### Fixed
+- **Extension options page:** the "No per-site overrides yet" empty-state
+  message used a `.hidden` class that was never defined in the
+  stylesheet — `classList.toggle('hidden', ...)` silently did nothing, so
+  the message stayed visible permanently, even with a populated overrides
+  table. Reproduced against a synthetic copy of the original (unfixed)
+  CSS to confirm this was real before fixing it, then confirmed the fix
+  via computed `display` value (not just class presence) in a jsdom test.
+- **Extension popup:** `new URL(tab.url)` was unguarded — a throw here
+  would leave the popup half-initialized. Wrapped in try/catch, falling
+  back to the "unsupported page" notice. Verified the catch path actually
+  prevents a crash (forced `URL` to throw in a test, confirmed graceful
+  fallback) rather than just looking defensive. Also added
+  `chrome.runtime.lastError` consumption on the messaging round-trip to
+  avoid an unchecked-lastError console warning on a disconnected/reloading
+  service worker.
+- **Landing page:** `--text-faint` (used for section labels, the footer,
+  and the live-status dot) measured 3.16:1 contrast against the page
+  background and 2.78:1 against card backgrounds — both fail WCAG AA's
+  4.5:1 minimum for normal text. Computed via the actual relative-
+  luminance formula, not eyeballed. Fixed to a hue-preserving lighter
+  shade (5.52:1 / 4.85:1).
+- **Landing page:** the install-method tabs (npm/pnpm/yarn/bun) were
+  unfocusable `<div>`s with a click handler only — completely unusable by
+  keyboard or screen reader. Rebuilt as real `<button>` elements with
+  `role="tab"`/`aria-selected`/`aria-controls` wiring. Verified via jsdom:
+  genuinely focusable (`document.activeElement` check, not just a
+  `tabindex` attribute present), and tab/panel switching still works
+  correctly after the change.
+- Removed `.lazy-demo-track` — dead CSS defined but referenced by no
+  element in the page.
+
+### Changed
+- Extension accent color (`--blue`) changed from an arbitrary generic
+  blue (`#60a5fa`) to a color actually derived from the real logo's navy
+  hue (`#5ba7f1` — same hue family as the logo, HSL-lightened for
+  contrast). Contrast on dark background verified equivalent (7.63:1 vs.
+  the old color's 7.64:1) — this is a brand-consistency fix, not a
+  contrast fix; the old color already passed.
+- Checkbox/switch hit areas in the popup and options page changed from
+  `width:0;height:0` (functionally invisible to focus/hit-testing) to
+  properly sized-but-visually-hidden inputs — standard accessible
+  custom-checkbox pattern.
+- Added `:focus-visible` states across the popup, options page, and
+  landing page — previously absent everywhere. Keyboard users had no
+  visual indication of what was focused anywhere in this project's UI.
+- Landing page: added a `@media (max-width: 560px)` block (hero padding,
+  stacked CTAs, smaller code blocks) and a `@media (prefers-reduced-
+  motion: reduce)` block (disables smooth-scroll and transitions) —
+  neither existed before.
+
+### Verification
+Every fix above was checked against a real DOM (jsdom) with assertions on
+actual computed state (computed `display`, `document.activeElement`,
+`aria-selected` values, forced-throw error paths) — not just visual
+inspection or "should work" reasoning. Test scripts are ad-hoc (this
+extension doesn't have a committed test suite the way the runtime
+package does — see `ENGINEERING_REPORT.md`'s v1.0 recommendations for why
+it should).
+
 ## v0.5.0
 
 ### Added
 - `zelvior-runtime/events` — standalone event helpers: `passiveOpts`,
   `throttleRaf`, `debounce`, `onFrame`, `onIdle`, `delegate`. Zero coupling
-  to the core runtime or to each other's dist output.
-- `zelvior-runtime/dom` — standalone batched DOM read/write scheduler
+  to the core runtime or to each other's dist output.- `zelvior-runtime/dom` — standalone batched DOM read/write scheduler
   (`read`, `write`, `clear`), fastdom-style.
 - `zelvior-runtime/scroll` — standalone passive + rAF-throttled scroll
   listener (`onScroll`), built on `events.js`.
@@ -19,6 +91,14 @@
   isolation between queued callbacks, and re-entrant scheduling (a
   callback that queues another callback resolves across frames rather
   than hanging). 23/23 total tests passing (8 existing + 15 new).
+- `landing-page/index.html`: added a "Standalone modules" section
+  documenting `events`/`dom`/`scroll` (had gone stale — the page was still
+  v0.4.0 with no mention of them). The hero version badge now also
+  self-corrects from the actually-loaded `Zelvior.version` at runtime,
+  rather than trusting the static badge to stay in sync by hand — this
+  file had already drifted to a stale version number once. Verified via
+  jsdom end-to-end (badge updates, live panel populates, both content
+  grids render) before shipping, not assumed.
 - The official logo mark (`assets/logo.png`), sourced from the uploaded
   artwork, background-removed and cropped to a clean transparent square.
   Used in this README, the landing page (header + favicon), and

@@ -1,7 +1,7 @@
 // Zelvior Runtime — MIT — https://github.com/zelvior/zelvior-runtime
 
 // src/zelvior.js
-var Z = { version: "0.5.0" };
+var Z = { version: "0.5.1" };
 var enabled = false;
 var doc = document;
 var win = window;

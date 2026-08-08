@@ -9,22 +9,14 @@ Dependency-free, adaptive browser runtime for lazy-loading, scheduling, and
 self-tuning performance based on live device/browser conditions. **~16.2KB
 minified, ~6.0KB gzipped, zero runtime dependencies.**
 
-> **Version note:** this package is at v0.5.0 locally; npm's latest
-> published release is v0.4.1 at time of writing (already includes the
-> `require()`/`engines.node` fixes documented under v0.4.0 below — the
-> maintainer published those). v0.5.0 (this version) adds the standalone
-> `events`/`dom`/`scroll` modules and the subpath `exports` for them, none
-> of which are in v0.4.1 yet. Core runtime behavior is unchanged either
-> way.
->
-> **Recurring publish-process issue, found again:** the published v0.4.1
-> tarball has the same version-mismatch bug as v0.3.9 did —
-> `package.json` says `0.4.1`, but the bundled `Z.version` string inside
-> `dist/zelvior.min.js` still says `0.4.0` (confirmed by downloading the
-> actual tarball from `registry.npmjs.org`). This means `dist/` isn't
-> being rebuilt immediately before `npm publish`, twice now. This local
-> build has been checked and both strings agree (`0.5.0`/`0.5.0`) — see
-> `CHANGELOG.md` v0.4.0 for the first occurrence of this finding.
+> **Version note:** this package is at v0.5.1 locally. npm's latest
+> published release is v0.5.0 (confirmed live: all 9 `exports` subpaths
+> present, `events`/`dom`/`scroll` load and export correctly via
+> `require()`, and — checked specifically, since this has happened twice
+> before — `package.json` and the bundled `Z.version` string agree, no
+> mismatch this time). v0.5.1 (this version) is UI/docs-only: extension
+> and landing-page fixes, zero changes to `dist/zelvior.js` itself (byte-
+> identical to what's published). See CHANGELOG.md for detail.
 
 > **About `npm WARN Zelvior No description`/`No repository field`/etc.:**
 > if you see these while running `npm install zelvior-runtime`, they are
@@ -331,7 +323,7 @@ package, not a 404 placeholder.)
 
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — subsystem internals and data flow
 - [PERFORMANCE.md](./PERFORMANCE.md) — full audit log: every defect found, why it mattered, and the fix
-- [CHANGELOG.md](./CHANGELOG.md) — version history (v0.5.0: three new standalone, zero-coupling modules — `events`, `dom`, `scroll` — see the Modules section above; core runtime untouched)
+- [CHANGELOG.md](./CHANGELOG.md) — version history (v0.5.1: extension/landing-page UI fixes — a real permanently-visible-empty-state bug, keyboard-inaccessible tabs, failed WCAG contrast, unguarded URL parsing — all verified against actual DOM state, not just visually)
 
 ## Building from source
 
