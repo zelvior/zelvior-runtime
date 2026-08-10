@@ -1,6 +1,6 @@
 {
   "name": "zelvior-runtime",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "Dependency-free, adaptive browser runtime for lazy loading, scheduling, and self-tuning performance based on live device/browser conditions.",
   "license": "MIT",
   "author": "Zelvior",
@@ -81,6 +81,18 @@
       "import": "./dist/scroll.esm.min.js",
       "require": "./dist/scroll.min.cjs",
       "default": "./dist/scroll.esm.min.js"
+    },
+    "./virtual": {
+      "types": "./dist/virtual.d.ts",
+      "import": "./dist/virtual.esm.js",
+      "require": "./dist/virtual.cjs",
+      "default": "./dist/virtual.esm.js"
+    },
+    "./virtual/min": {
+      "types": "./dist/virtual.d.ts",
+      "import": "./dist/virtual.esm.min.js",
+      "require": "./dist/virtual.min.cjs",
+      "default": "./dist/virtual.esm.min.js"
     },
     "./package.json": "./package.json"
   },

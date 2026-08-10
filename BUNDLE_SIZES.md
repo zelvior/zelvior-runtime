@@ -5,7 +5,7 @@
 | dist/zelvior.esm.js | 29542 | 7591 |
 | dist/zelvior.esm.min.js | 15473 | 5890 |
 | dist/zelvior.cjs | 30551 | 7943 |
-| dist/zelvior.min.cjs | 15936 | 6110 |
+| dist/zelvior.min.cjs | 15936 | 6109 |
 | dist/zelvior.js | 32902 | 8101 |
 | dist/zelvior.min.js | 16212 | 6189 |
 | dist/events.esm.js | 2814 | 962 |
@@ -20,3 +20,7 @@
 | dist/scroll.esm.min.js | 1326 | 641 |
 | dist/scroll.cjs | 3277 | 1136 |
 | dist/scroll.min.cjs | 1764 | 840 |
+| dist/virtual.esm.js | 7044 | 2177 |
+| dist/virtual.esm.min.js | 3373 | 1498 |
+| dist/virtual.cjs | 7993 | 2488 |
+| dist/virtual.min.cjs | 3813 | 1704 |

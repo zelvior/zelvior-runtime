@@ -11,10 +11,11 @@ same IIFE scope, and are only "connected" when `Z.enable()` runs.
 src/
   zelvior.js       core runtime (single file, IIFE-bundled — see below)
   zelvior.d.ts
-  modules/         standalone, zero-coupling utilities (added v0.5.0)
+  modules/         standalone, zero-coupling utilities (events/dom/scroll added v0.5.0, virtual added v0.6.0)
     events.js      passiveOpts, throttleRaf, debounce, onFrame, onIdle, delegate
     dom.js         read/write batched DOM scheduler
     scroll.js      passive + rAF-throttled scroll listener (imports events.js)
+    virtual.js     windowed list rendering — binary search over prefix-sum heights (imports scroll.js, dom.js)
 dist/              built output (esm/cjs/iife × core, + esm/cjs × each module)
 test/              node:test + jsdom
 landing-page/      standalone demo page, loads the runtime from jsDelivr

@@ -246,6 +246,72 @@ try/catch.
 
 ---
 
+---
+
+## Pass 5 (v0.6.0) — list virtualization: the actual algorithm and how it was verified
+
+Added `zelvior-runtime/virtual` in direct response to "our target audience
+has the least hardware and software" — a large plain list is one of the
+most common, most fixable causes of a weak device feeling unusable, and
+the fix is a well-established, correctness-critical algorithm rather than
+a vague performance gesture.
+
+**The problem, stated precisely.** A DOM list of N rows costs layout and
+paint proportional to N even when the visible viewport can only show a
+few dozen at once. On a fast machine the difference between "render 20
+rows" and "render 5,000 rows" may be imperceptible; on a weak CPU/GPU it's
+the difference between smooth scrolling and a multi-second freeze per
+frame.
+
+**The algorithm.** For fixed-height items, "which items are visible right
+now" is O(1) arithmetic (`scrollTop / itemHeight`) — nothing clever
+needed. For variable-height items (the common real case: chat messages,
+comments, feed posts, where rows aren't all the same height), naively
+answering "which item is at scroll offset Y" means walking the list
+summing heights until the running total passes Y — O(n) per scroll event.
+This module instead builds a prefix-sum array of cumulative heights once,
+and finds the answer via **binary search** (`upperBound`, exported
+standalone as a reusable primitive) — O(log n). For a 5,000-item list
+that's the difference between ~13 comparisons and up to 5,000, on every
+single scroll frame, on exactly the hardware class with the least budget
+to spare for that kind of waste.
+
+**How this was actually verified, not just described:**
+
+| Claim | Verification | Result |
+|---|---|---|
+| Binary search returns the same answer as a correct-by-construction linear scan | 2,000 randomized cases (200 random prefix-sum arrays × 10 sampled offsets each, including out-of-range and negative offsets) compared against a brute-force reference implementation | All 2,000 matched exactly |
+| Edge cases (single element, offset before/at/after range) handled correctly | Explicit boundary-condition assertions | Pass |
+| A large list only renders the visible range + overscan, not everything | 10,000-item stress list; asserted rendered-node count stays under 20 | 8 nodes rendered (measured, not assumed) |
+| Scrolling actually changes what's rendered | Rendered index sets captured before and after a large simulated scroll, asserted zero overlap | Pass — completely disjoint ranges |
+| Variable-height positioning is pixel-correct | Irregular height array `[10,50,20,100,...]`; asserted item 3's computed `top` equals the hand-calculated prefix sum (80px) | Pass |
+| `destroy()` actually cleans up | Asserted `container.children.length === 0` after destroy, and that a subsequent scroll event doesn't throw or re-render | Pass |
+
+**What this claim does *not* include:** an actual frame-rate or
+input-latency measurement on real (or even simulated-weak) hardware — this
+sandbox has no browser to produce that number honestly, the same
+limitation documented in Pass 3/4. What's verified here is *algorithmic
+correctness* and *that virtualization actually happens* (measured node
+counts, not assumed), which is the necessary foundation for the
+performance claim — the performance claim itself (binary search is faster
+than linear scan at scale, rendering fewer nodes is cheaper than
+rendering more) rests on well-established computer science rather than
+this project's own unverified benchmarking, and is stated that way rather
+than dressed up as measured.
+
+**A real bug this testing process caught in itself, not in the module:**
+the first draft of `test/virtual.test.mjs` asserted on rendered DOM
+content immediately after calling `createVirtualList()`, without awaiting
+the fact that `read()`/`write()` (from `zelvior-runtime/dom`) schedule
+their callbacks on the next animation frame — asynchronously. One test
+failed outright (nothing had rendered yet), and a second had a weak
+`if (node) {...}` conditional that silently no-op'd instead of failing,
+masking the same timing bug. Both were fixed by properly awaiting a
+settle window before asserting — a reminder that async scheduling bugs
+hide in test code as easily as in the code under test.
+
+---
+
 ## How to verify these fixes yourself
 
 ```js

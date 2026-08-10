@@ -9,14 +9,18 @@ Dependency-free, adaptive browser runtime for lazy-loading, scheduling, and
 self-tuning performance based on live device/browser conditions. **~16.2KB
 minified, ~6.0KB gzipped, zero runtime dependencies.**
 
-> **Version note:** this package is at v0.5.1 locally. npm's latest
-> published release is v0.5.0 (confirmed live: all 9 `exports` subpaths
-> present, `events`/`dom`/`scroll` load and export correctly via
-> `require()`, and — checked specifically, since this has happened twice
-> before — `package.json` and the bundled `Z.version` string agree, no
-> mismatch this time). v0.5.1 (this version) is UI/docs-only: extension
-> and landing-page fixes, zero changes to `dist/zelvior.js` itself (byte-
-> identical to what's published). See CHANGELOG.md for detail.
+> **Version note:** this package is at v0.6.0 locally. npm's latest
+> published release is v0.5.1 (confirmed live by downloading the actual
+> tarball). v0.6.0 adds the `virtual` module (list virtualization —
+> binary search over a prefix-sum array, see the Modules section below)
+> on top of everything in v0.5.1.
+>
+> **Recurring publish-process issue, found a 4th time:** the published
+> v0.5.1 tarball has the same version-mismatch bug documented under v0.4.0
+> and v0.4.1 below — `package.json` says `0.5.1`, the bundled
+> `Z.version` string inside `dist/zelvior.min.js` says `0.5.0`. This
+> local build's two strings have been checked and agree (`0.6.0`/
+> `0.6.0`) before every release note in this README claims so.
 
 > **About `npm WARN Zelvior No description`/`No repository field`/etc.:**
 > if you see these while running `npm install zelvior-runtime`, they are
@@ -84,7 +88,8 @@ three; see [Formats](#formats) for exactly what each build exposes.
 Unlike the subsystems above, these are genuinely separate from the core
 runtime — importing one does not pull in `Zelvior` or any other module.
 None of them are loaded or run unless you import them; none change any
-browser default behavior on their own. Added in v0.5.0.
+browser default behavior on their own. `events`/`dom`/`scroll` added in
+v0.5.0; `virtual` added in v0.6.0.
 
 ### `zelvior-runtime/events`
 
@@ -188,6 +193,64 @@ inherits `events.js`'s passive/rAF fallbacks.
 completely untouched — only how your own handler is attached and how
 often it runs.
 
+### `zelvior-runtime/virtual`
+
+```js
+import { createVirtualList } from 'zelvior-runtime/virtual';
+
+const list = createVirtualList({
+  container: document.getElementById('feed'), // must have a fixed height + overflow:auto
+  itemCount: rows.length,
+  itemHeight: 48,                              // number (fixed) or (index) => height (variable)
+  renderItem: (index, recycledNode) => {
+    const el = recycledNode || document.createElement('div');
+    el.textContent = rows[index].title;
+    return el;
+  },
+  overscan: 4,                                 // extra items rendered off-screen (default 4)
+});
+
+list.setItemCount(newLength); // after loading more data
+list.destroy();               // removes the scroll listener and every rendered node
+```
+
+Renders only the DOM nodes needed for the currently visible range (plus a
+small overscan buffer), instead of every item in the list. **This is the
+single highest-leverage thing you can do for scroll performance on weak
+hardware** — a plain list of a few thousand rows costs layout/paint
+proportional to its full size even when only ~20 are ever visible; on a
+2009 Atom or a low-end Android WebView that's the difference between
+smooth scrolling and a slideshow.
+
+**The algorithm, specifically** (this is the "real algorithm" this module
+exists to showcase, not just a description of what virtualization is in
+general): for fixed-height items, the visible range is O(1) arithmetic.
+For variable-height items — the common real case: chat messages,
+comments, feed posts — naively finding "which item is at scroll offset Y"
+means walking the list summing heights until you pass Y, which is O(n)
+*per scroll event*. This module instead maintains a prefix-sum array of
+cumulative heights and finds the start index via **binary search**
+(`upperBound`, also exported standalone) — O(log n) instead of O(n). For
+a 5,000-item list that's roughly 13 comparisons instead of up to 5,000,
+on every scroll frame, on exactly the CPU that has the least room for
+that kind of waste.
+
+Verified in `test/virtual.test.mjs`: the binary search is checked against
+a brute-force linear-search reference implementation across 2,000
+randomized cases (not just a couple of hand-picked examples), plus edge
+cases (offset before/after/at the range boundary). Separately verified:
+only the visible range + overscan is ever rendered (not all 10,000 items
+in a stress-test list), scrolling changes the rendered range, variable-
+height item positioning is pixel-correct, and `destroy()` actually
+removes every node and stops responding to further scroll events.
+
+**Browser compatibility:** works everywhere `zelvior-runtime/scroll` and
+`zelvior-runtime/dom` do (which it's built on — no logic duplicated).
+
+**Does it modify native browser behavior?** No — `container` still
+scrolls natively; this only changes which children exist inside it at any
+given moment.
+
 ## Subsystems
 
 - `Zelvior.scheduler` — priority task queue (`add`, `addIdle`, `nextFrame`, `whenIdle`, `clear`, `pending`)
@@ -290,7 +353,7 @@ needed.
 
 ```bash
 npm install   # pulls in the jsdom devDependency
-npm test      # runs test/basic.test.mjs via Node's built-in test runner
+npm test      # runs test/*.test.mjs (basic + virtual) via Node's built-in test runner
 ```
 
 The suite runs the actual built `dist/zelvior.js` inside jsdom — a real,
@@ -323,7 +386,7 @@ package, not a 404 placeholder.)
 
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — subsystem internals and data flow
 - [PERFORMANCE.md](./PERFORMANCE.md) — full audit log: every defect found, why it mattered, and the fix
-- [CHANGELOG.md](./CHANGELOG.md) — version history (v0.5.1: extension/landing-page UI fixes — a real permanently-visible-empty-state bug, keyboard-inaccessible tabs, failed WCAG contrast, unguarded URL parsing — all verified against actual DOM state, not just visually)
+- [CHANGELOG.md](./CHANGELOG.md) — version history (v0.6.0: `virtual` module added — real list-virtualization algorithm, binary search over cumulative heights, verified against 2,000 randomized brute-force cases; landing page rewritten for non-developer visitors)
 
 ## Building from source
 

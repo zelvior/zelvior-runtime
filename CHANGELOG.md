@@ -1,5 +1,45 @@
 # Changelog
 
+## v0.6.0
+
+### Added
+- `zelvior-runtime/virtual` — list virtualization (`createVirtualList`,
+  plus the standalone `upperBound` binary-search primitive). Renders only
+  the visible range + overscan of a large list instead of every item.
+  Built directly for this project's stated target audience (weak
+  hardware/software) — large plain lists are one of the most common,
+  most fixable causes of a device feeling unusable. See `PERFORMANCE.md`
+  ("Pass 5") for the algorithm and exactly how it was verified (2,000
+  randomized cases checked against a brute-force reference, not just a
+  couple of examples).
+- `test/virtual.test.mjs` — 7 new tests (binary-search correctness across
+  randomized cases, edge cases, rendered-range correctness, scroll
+  behavior, variable-height positioning, `destroy()` cleanup). 30/30
+  total tests passing project-wide (23 existing + 7 new).
+- `src/modules/virtual.d.ts`, `./virtual` and `./virtual/min` package
+  exports.
+
+### Changed
+- **Landing page rewritten for actual end users, not just developers.**
+  The hero and top section previously assumed every visitor was a
+  developer evaluating an npm package. Given the stated target audience
+  (people with the least hardware and software), the page now leads with
+  a plain-language pitch for the browser extension — the thing an
+  ordinary person with an old computer can actually use without writing
+  code — and clearly separates that from the developer-oriented
+  npm/CDN/API content below a "For developers" divider.
+- Fixed a would-have-been-broken link in that rewrite before shipping it:
+  an initial draft linked directly to
+  `github.com/zelvior/zelvior-runtime/tree/main/extension`, which doesn't
+  exist — checked the real repository's file listing directly and found
+  no `extension/` folder there at all (the extension is a separate
+  project). Replaced with a link to the real, verified GitHub profile
+  repository list instead of a guessed URL.
+- `Zelvior.version`/`package.json` version-mismatch bug (see v0.4.0
+  below) **found a 4th time**, now in the published v0.5.1 tarball
+  (`package.json` says 0.5.1, bundled `Z.version` says 0.5.0) — confirmed
+  live, documented in README, not fixable from here (no publish access).
+
 ## v0.5.1
 
 - Replaced `assets/logo.png` (and its derived `assets/logo-240.png`, the

@@ -1,6 +1,24 @@
 # Zelvior Runtime — Engineering Report
 **v0.3.9 · prepared as a technical review, not a marketing document**
 
+> **Addendum, v0.6.0:** this report was written for the v0.3.9
+> benchmark-analysis pass and reflects that point in time — it hasn't
+> been rewritten to describe every later change, on purpose, since
+> silently rewriting a report to look retroactively complete would be
+> less honest than dating it and appending to it. Since v0.3.9: v0.4.0
+> fixed a real `ERR_REQUIRE_ESM` bug; v0.5.0 added the `events`/`dom`/
+> `scroll` standalone modules; v0.5.1 fixed real extension/landing-page
+> UI bugs (all verified against actual DOM state — see `CHANGELOG.md`
+> for each); v0.6.0 added `zelvior-runtime/virtual` (list virtualization
+> via binary search over prefix-sum heights, verified against 2,000
+> randomized brute-force-compared cases) and rewrote the landing page for
+> non-developer visitors, since the actual target audience for this
+> project — people with the least hardware and software — mostly
+> benefits from the browser extension, not the npm package, and the page
+> didn't mention the extension at all before this pass. Full detail for
+> every one of these is in `CHANGELOG.md` and `PERFORMANCE.md`, not
+> restated here.
+
 ## 0. Scope of this report — read this first
 
 The request covered runtime, extension, benchmark suite, website, and
