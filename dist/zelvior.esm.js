@@ -1,7 +1,7 @@
 // Zelvior Runtime — MIT — https://github.com/zelvior/zelvior-runtime
 
 // src/zelvior.js
-var Z = { version: "0.6.0" };
+var Z = { version: "0.6.1" };
 var enabled = false;
 var doc = document;
 var win = window;
@@ -466,6 +466,7 @@ var Adaptive = /* @__PURE__ */ function() {
   var lastProbeDelay = 0;
   var busyRatio = 0;
   var started = false;
+  var pinned = false;
   function apply(lvl) {
     if (lvl === level && started) return;
     level = lvl;
@@ -479,7 +480,7 @@ var Adaptive = /* @__PURE__ */ function() {
     });
     if (cfg.reduceAnim) Optimizer.reduceAnimations(true);
     else Optimizer.restoreAnimations();
-    emit("adaptive:level", { level: lvl, name: cfg.name, config: cfg });
+    emit("adaptive:level", { level: lvl, name: cfg.name, config: cfg, pinned });
   }
   function probeIdle() {
     if (has.vis && doc.hidden) return;
@@ -502,6 +503,7 @@ var Adaptive = /* @__PURE__ */ function() {
   }
   function decide() {
     if (has.vis && doc.hidden) return;
+    if (pinned) return;
     if (!fpsHist.length) return;
     var sum = 0;
     for (var i = 0; i < fpsHist.length; i++) sum += fpsHist[i];
@@ -593,6 +595,7 @@ var Adaptive = /* @__PURE__ */ function() {
     start: function() {
       if (started) return;
       started = true;
+      pinned = false;
       setTimeout(function() {
         safe0(startupProbe);
       }, 600);
@@ -607,12 +610,18 @@ var Adaptive = /* @__PURE__ */ function() {
       decideT = null;
     },
     force: function(lvl) {
-      if (lvl >= 0 && lvl < LEVELS.length) apply(lvl);
+      if (lvl >= 0 && lvl < LEVELS.length) {
+        pinned = true;
+        apply(lvl);
+      }
+    },
+    get pinned() {
+      return pinned;
     },
     onMetrics,
     onLongTask,
     snapshot: function() {
-      return { level, name: LEVELS[level].name, fpsAvg: Math.round(this.fpsAvg), busyRatio: Math.round(busyRatio * 100), probeDelay: Math.round(lastProbeDelay), escStreak, relStreak };
+      return { level, name: LEVELS[level].name, fpsAvg: Math.round(this.fpsAvg), busyRatio: Math.round(busyRatio * 100), probeDelay: Math.round(lastProbeDelay), escStreak, relStreak, pinned };
     }
   };
 }();

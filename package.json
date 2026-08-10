@@ -1,6 +1,6 @@
 {
   "name": "zelvior-runtime",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Dependency-free, adaptive browser runtime for lazy loading, scheduling, and self-tuning performance based on live device/browser conditions.",
   "license": "MIT",
   "author": "Zelvior",

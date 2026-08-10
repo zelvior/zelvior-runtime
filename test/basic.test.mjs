@@ -24,6 +24,14 @@ function setup(html) {
   const dom = new JSDOM(html || '<!doctype html><html><body></body></html>', {
     url: 'https://example.com/',
     runScripts: 'outside-only',
+    // Without this, jsdom reports document.hidden === true (visibilityState
+    // 'prerender') by default -- which silently short-circuits every guard
+    // in the runtime that checks `has.vis && doc.hidden` (decide(),
+    // probeIdle(), Metrics.tick()'s hidden-tab skip). A test suite built on
+    // an always-hidden document can never actually exercise that code path
+    // it's nominally testing; it was only ever proving the hidden-tab skip
+    // works, never proving the normal (visible) path does anything at all.
+    pretendToBeVisual: true,
   });
   const { window } = dom;
   global.window = window;
@@ -142,4 +150,43 @@ test('disable() clears all timers so the process can exit (no leaked intervals)'
   // If this test file's process exits cleanly (node:test enforces this per
   // file), no interval/rAF-shim loop was left running.
   assert.equal(Z.isEnabled(), false);
+});
+
+test('adaptive.force() actually sticks: decide() does not silently override a manually pinned level', async () => {
+  // Real bug this reproduces: the extension popup's "force level" buttons
+  // called Zelvior.adaptive.force(lvl), which set the level once but did
+  // not stop the live decide() auto-tuning loop from reverting it a few
+  // seconds later -- the manual choice never actually took effect for more
+  // than a few seconds. This test drives decide() with metrics that would
+  // normally trigger an auto-adjustment, and asserts the pinned level holds.
+  const { Z } = setup();
+  Z.enable({ adaptive: true });
+  await new Promise((r) => setTimeout(r, 700)); // let the startup probe settle first
+
+  Z.adaptive.force(3); // pin to "max"
+  assert.equal(Z.adaptive.level, 3);
+  assert.equal(Z.adaptive.pinned, true);
+
+  // Feed decide() a run of metrics that would normally de-escalate the
+  // level (high FPS, low busy ratio -- exactly the "idle+smooth" case).
+  for (let i = 0; i < 6; i++) {
+    Z.adaptive.onMetrics({ fps: 60 });
+  }
+  // Directly invoke the same logic the live decideT interval would run,
+  // several times in a row (decide() requires a streak before acting).
+  const internalDecide = Z.adaptive; // decide() itself isn't exported, but
+  // waiting past several real decide() interval ticks exercises the same
+  // code path since Adaptive.start() already scheduled decideT @ 2500ms.
+  await new Promise((r) => setTimeout(r, 8000));
+
+  assert.equal(Z.adaptive.level, 3, 'level should still be pinned at 3, not auto-reverted by decide()');
+  assert.equal(Z.adaptive.pinned, true);
+
+  // Calling start() again (the real trigger for "user turned auto-tuning
+  // back on") should clear the pin.
+  Z.adaptive.stop();
+  Z.adaptive.start();
+  assert.equal(Z.adaptive.pinned, false, 'restarting adaptive should clear the pin');
+
+  teardown(Z);
 });

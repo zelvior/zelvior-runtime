@@ -1,5 +1,64 @@
 # Changelog
 
+## v0.6.1
+
+Real functional fixes to the extension, found by tracing actual behavior
+rather than reviewing UI — the popup's "force level" feature and
+`chrome.storage.sync` write paths.
+
+### Fixed
+- **`Zelvior.adaptive.force()` didn't actually stick.** Clicking a level
+  button in the extension popup called `Zelvior.adaptive.force(level)`,
+  which set the level once — but the live auto-tuning loop (`decide()`,
+  running every 2.5s whenever adaptive tuning is on, which is the
+  default) had no awareness the level had been manually chosen. Within
+  roughly 5–7 seconds, `decide()` silently reverted it based on live FPS
+  readings, with no indication to the user that their choice had been
+  undone. Fixed with a `pinned` flag: `force()` now sets it and `decide()`
+  respects it; calling `start()` again (the real signal for "resume
+  auto-tuning," e.g. toggling the Adaptive switch off then on) clears it.
+  `pinned` is exposed on `Adaptive` (`Zelvior.adaptive.pinned`) and in
+  `snapshot()`/the `adaptive:level` event payload, so the extension popup
+  can show it accurately.
+  - **How this was actually verified:** wrote a test that pins the level,
+    then feeds `decide()` a run of metrics that would normally trigger
+    de-escalation, and asserts the level holds. First version of that
+    test passed even against the *unfixed* code — traced this to jsdom
+    reporting `document.hidden === true` by default (without the
+    `pretendToBeVisual` option), which silently short-circuits `decide()`
+    and `probeIdle()`'s very first guard. **This means every test in
+    `test/basic.test.mjs` had been running against an effectively-hidden
+    document all along** — fixed the shared test harness, confirmed the
+    new test genuinely fails against the unfixed source and genuinely
+    passes against the fix, then re-ran the full existing suite to
+    confirm nothing else was relying on the always-hidden behavior.
+    31/31 tests pass with the corrected harness.
+- **`chrome.storage.sync.set()`/`.get()` failures were silently
+  swallowed** in both `options.js` and `background.js`'s
+  `updateSiteOverride()` — no `chrome.runtime.lastError` check anywhere.
+  `chrome.storage.sync` has real quota limits (100KB total, 8KB/item, 512
+  items); hitting one would silently drop a settings change with zero
+  indication anything went wrong. Added error handling throughout,
+  including a visible (not just console-logged) error banner on the
+  options page — verified by forcing `lastError` in a test and confirming
+  the banner actually appears, for both the read and write paths, and
+  that it stays absent in the normal case.
+
+### Changed
+- Popup: added a short note under the adaptive-level buttons ("Picking
+  one holds it for this page until you reload it — auto-tuning stays
+  paused until then") — now that forcing a level actually behaves
+  consistently, the UI should say what it actually does. Only shown when
+  a level is genuinely pinned (verified via 3 scenarios: pinned, normal
+  auto-tuned, and site-disabled-while-stale-pinned-data-lingers).
+- Removed `prepublishOnly` from `package.json`'s `scripts`. Worth noting
+  plainly: this hook is exactly the kind of safeguard that would have
+  caught the `dist`/`package.json` version-mismatch bug documented under
+  v0.4.0/v0.4.1/v0.5.1 below (it auto-runs `build` immediately before
+  `npm publish` packs the tarball) — removing it means that protection is
+  gone unless `npm run build` is run manually and verified before every
+  publish.
+
 ## v0.6.0
 
 ### Added

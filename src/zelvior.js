@@ -1,7 +1,7 @@
 // Zelvior Runtime v0.3 — MIT
 // ESM source of truth; bundled to esm/cjs/iife by build.mjs
 
-  var Z = { version: '0.6.0' };
+  var Z = { version: '0.6.1' };
   var enabled = false;
   var doc = document, win = window, DE = doc.documentElement;
   var subs = {};
@@ -283,6 +283,7 @@
     var lastProbeDelay = 0;
     var busyRatio = 0;
     var started = false;
+    var pinned = false; // true after force(); suppresses decide() until start() is called again
 
     function apply(lvl) {
       if (lvl === level && started) return;
@@ -297,7 +298,7 @@
       });
       if (cfg.reduceAnim) Optimizer.reduceAnimations(true);
       else Optimizer.restoreAnimations();
-      emit('adaptive:level', { level: lvl, name: cfg.name, config: cfg });
+      emit('adaptive:level', { level: lvl, name: cfg.name, config: cfg, pinned: pinned });
     }
 
     function probeIdle() {
@@ -320,6 +321,7 @@
 
     function decide() {
       if (has.vis && doc.hidden) return;
+      if (pinned) return;
       if (!fpsHist.length) return;
       var sum = 0; for (var i = 0; i < fpsHist.length; i++) sum += fpsHist[i];
       var avg = sum / fpsHist.length;
@@ -364,6 +366,7 @@
       get fpsAvg() { if (!fpsHist.length) return 0; var s = 0; for (var i = 0; i < fpsHist.length; i++) s += fpsHist[i]; return s / fpsHist.length; },
       start: function () {
         if (started) return; started = true;
+        pinned = false; // an explicit (re)start means "resume auto-tuning", overriding any prior force()
         setTimeout(function () { safe0(startupProbe); }, 600);
         probeT = setInterval(probeIdle, 2000);
         decideT = setInterval(decide, 2500);
@@ -373,10 +376,11 @@
         if (probeT) clearInterval(probeT); probeT = null;
         if (decideT) clearInterval(decideT); decideT = null;
       },
-      force: function (lvl) { if (lvl >= 0 && lvl < LEVELS.length) apply(lvl); },
+      force: function (lvl) { if (lvl >= 0 && lvl < LEVELS.length) { pinned = true; apply(lvl); } },
+      get pinned() { return pinned; },
       onMetrics: onMetrics,
       onLongTask: onLongTask,
-      snapshot: function () { return { level: level, name: LEVELS[level].name, fpsAvg: Math.round(this.fpsAvg), busyRatio: Math.round(busyRatio * 100), probeDelay: Math.round(lastProbeDelay), escStreak: escStreak, relStreak: relStreak }; }
+      snapshot: function () { return { level: level, name: LEVELS[level].name, fpsAvg: Math.round(this.fpsAvg), busyRatio: Math.round(busyRatio * 100), probeDelay: Math.round(lastProbeDelay), escStreak: escStreak, relStreak: relStreak, pinned: pinned }; }
     };
   })();
 

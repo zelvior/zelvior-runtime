@@ -312,6 +312,60 @@ hide in test code as easily as in the code under test.
 
 ---
 
+---
+
+## Pass 6 (v0.6.1) — a bug in the runtime, and a bug in the tests that were supposed to catch it
+
+**The runtime bug.** `Adaptive.force(level)` set the level once but had no
+mechanism to stop the live `decide()` auto-tuning loop from reverting it
+a few seconds later. This is a correctness bug, not a performance one —
+included here because it was found and fixed as part of the same
+"actually working, not just UI" audit pass, and because the *test* bug
+that follows is a genuine methodology lesson worth recording.
+
+**The test bug this exposed.** The first version of a test for this fix
+— pin the level, feed `decide()` metrics that should trigger
+de-escalation, assert the level holds — passed even when run against the
+*original, unfixed* source. That's a false positive, and a dangerous one:
+a test that can't fail is worse than no test, because it creates false
+confidence.
+
+Root cause: jsdom's `document.hidden` defaults to `true` (`visibilityState:
+'prerender'`) unless the `pretendToBeVisual` constructor option is set.
+`Adaptive.decide()` and `Adaptive.probeIdle()` both begin with `if
+(has.vis && doc.hidden) return;` — a deliberate, correct guard added in
+an earlier pass specifically so a backgrounded tab doesn't waste cycles
+on auto-tuning (see Pass 1). Against a jsdom document that reports as
+permanently hidden, that guard fires on *every* call, `decide()` never
+reaches its actual logic, and the level trivially "holds" — not because
+the fix works, but because the code under test never ran at all.
+
+This wasn't limited to the one new test: `test/basic.test.mjs`'s shared
+`setup()` helper never set `pretendToBeVisual`, meaning **every test in
+that file had been exercising an effectively-hidden document for the
+entire project's test history.** Practically, most of those tests don't
+depend on visibility (DOM mutation, `Recycler`, deferred-image logic are
+all unaffected), which is presumably why this went unnoticed — but any
+future test of `Metrics`, `Adaptive`, or anything else gated by the
+hidden-tab check would have had the same false-positive risk.
+
+**The fix and how it was actually confirmed, not just asserted:**
+1. Added `pretendToBeVisual: true` to the shared test `setup()`.
+2. Re-ran the *new* test against the deliberately-reverted (buggy) source
+   with the corrected harness — confirmed it now genuinely **fails**.
+3. Restored the fix, re-ran — confirmed it now genuinely **passes**, this
+   time because `decide()` actually executed and was actually suppressed
+   by the pin.
+4. Re-ran the *entire* existing suite (all 30 prior tests) against the
+   corrected harness to check nothing had been silently relying on the
+   always-hidden behavior. All 30 passed unchanged; 31/31 total.
+
+The general lesson, stated plainly rather than left implicit: a test that
+passes against known-broken code is not evidence of anything, and the
+only way to know a test is real is to watch it fail first.
+
+---
+
 ## How to verify these fixes yourself
 
 ```js

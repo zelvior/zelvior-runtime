@@ -9,18 +9,11 @@ Dependency-free, adaptive browser runtime for lazy-loading, scheduling, and
 self-tuning performance based on live device/browser conditions. **~16.2KB
 minified, ~6.0KB gzipped, zero runtime dependencies.**
 
-> **Version note:** this package is at v0.6.0 locally. npm's latest
-> published release is v0.5.1 (confirmed live by downloading the actual
-> tarball). v0.6.0 adds the `virtual` module (list virtualization —
-> binary search over a prefix-sum array, see the Modules section below)
-> on top of everything in v0.5.1.
->
-> **Recurring publish-process issue, found a 4th time:** the published
-> v0.5.1 tarball has the same version-mismatch bug documented under v0.4.0
-> and v0.4.1 below — `package.json` says `0.5.1`, the bundled
-> `Z.version` string inside `dist/zelvior.min.js` says `0.5.0`. This
-> local build's two strings have been checked and agree (`0.6.0`/
-> `0.6.0`) before every release note in this README claims so.
+> **Version note:** this package is at v0.6.1 locally. npm's latest
+> published release is v0.6.0 (confirmed live by downloading the actual
+> tarball — `package.json` and the bundled `Z.version` string agree this
+> time, no mismatch). v0.6.1 (this version) fixes a real bug where
+> `Zelvior.adaptive.force()` didn't actually stick — see CHANGELOG.md.
 
 > **About `npm WARN Zelvior No description`/`No repository field`/etc.:**
 > if you see these while running `npm install zelvior-runtime`, they are
@@ -386,7 +379,7 @@ package, not a 404 placeholder.)
 
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — subsystem internals and data flow
 - [PERFORMANCE.md](./PERFORMANCE.md) — full audit log: every defect found, why it mattered, and the fix
-- [CHANGELOG.md](./CHANGELOG.md) — version history (v0.6.0: `virtual` module added — real list-virtualization algorithm, binary search over cumulative heights, verified against 2,000 randomized brute-force cases; landing page rewritten for non-developer visitors)
+- [CHANGELOG.md](./CHANGELOG.md) — version history (v0.6.1: fixed `adaptive.force()` not actually sticking, added storage-error handling to the extension, and caught a real false-positive bug in the test suite itself — see PERFORMANCE.md "Pass 6")
 
 ## Building from source
 

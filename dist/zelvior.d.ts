@@ -78,12 +78,15 @@ export interface Adaptive {
   readonly busyRatio: number;
   readonly lastProbeDelay: number;
   readonly fpsAvg: number;
+  /** True after force() until start() is next called; while true, decide() will not auto-adjust the level. */
+  readonly pinned: boolean;
   start(): void;
   stop(): void;
+  /** Manually pin the adaptive level. Auto-tuning (decide()) is suppressed until start() is called again. */
   force(level: number): void;
   onMetrics(snapshot: MetricsSnapshot): void;
   onLongTask(): void;
-  snapshot(): { level: number; name: string; fpsAvg: number; busyRatio: number; probeDelay: number; escStreak: number; relStreak: number };
+  snapshot(): { level: number; name: string; fpsAvg: number; busyRatio: number; probeDelay: number; escStreak: number; relStreak: number; pinned: boolean };
 }
 
 export interface Recycler {
