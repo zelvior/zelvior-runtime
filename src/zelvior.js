@@ -1,7 +1,7 @@
 // Zelvior Runtime v0.3 — MIT
 // ESM source of truth; bundled to esm/cjs/iife by build.mjs
 
-  var Z = { version: '0.6.1' };
+  var Z = { version: '0.7.0' };
   var enabled = false;
   var doc = document, win = window, DE = doc.documentElement;
   var subs = {};
@@ -16,7 +16,12 @@
     po: typeof win.PerformanceObserver === 'function',
     mem: typeof win.performance === 'object' && win.performance && 'memory' in win.performance,
     cle: typeof win.CustomEvent === 'function',
-    ma: typeof win.matchMedia === 'function'
+    ma: typeof win.matchMedia === 'function',
+    // Network Information API -- Chromium-based browsers only (Firefox and
+    // Safari have never implemented it). Every use of this is guarded by
+    // `has.net`, with an honest "unknown connection" fallback everywhere
+    // it's read, not an assumption of a fast connection.
+    net: typeof win.navigator === 'object' && win.navigator && 'connection' in win.navigator
   };
 
   function now() { return has.perf ? performance.now() : Date.now(); }
@@ -319,9 +324,37 @@
     }
     function onLongTask() { longRecent++; }
 
+    function connectionInfo() {
+      if (!has.net) return null;
+      var c = win.navigator.connection;
+      if (!c) return null;
+      return { effectiveType: c.effectiveType || null, saveData: !!c.saveData, downlink: typeof c.downlink === 'number' ? c.downlink : null, rtt: typeof c.rtt === 'number' ? c.rtt : null };
+    }
+    function slowConnection() {
+      var c = connectionInfo();
+      if (!c) return false;
+      return c.saveData || c.effectiveType === 'slow-2g' || c.effectiveType === '2g';
+    }
+    function onConnectionChange() {
+      if (pinned || (has.vis && doc.hidden)) return;
+      if (slowConnection() && level < 3) {
+        escStreak = 0; relStreak = 0;
+        apply(3);
+        emit('adaptive:reason', { reason: 'slow-connection', connection: connectionInfo() });
+      }
+      // Deliberately no symmetric immediate de-escalation on a connection
+      // improving -- that still goes through the normal FPS-based streak
+      // logic in decide(), same asymmetry as critical-fps escalating
+      // immediately but idle+smooth requiring two consecutive good ticks.
+    }
+
     function decide() {
       if (has.vis && doc.hidden) return;
       if (pinned) return;
+      if (slowConnection()) {
+        if (level < 3) { escStreak = 0; relStreak = 0; apply(3); emit('adaptive:reason', { reason: 'slow-connection', connection: connectionInfo() }); }
+        return;
+      }
       if (!fpsHist.length) return;
       var sum = 0; for (var i = 0; i < fpsHist.length; i++) sum += fpsHist[i];
       var avg = sum / fpsHist.length;
@@ -370,17 +403,24 @@
         setTimeout(function () { safe0(startupProbe); }, 600);
         probeT = setInterval(probeIdle, 2000);
         decideT = setInterval(decide, 2500);
+        if (has.net && win.navigator.connection && win.navigator.connection.addEventListener) {
+          safe0(function () { win.navigator.connection.addEventListener('change', onConnectionChange); });
+        }
       },
       stop: function () {
         started = false;
         if (probeT) clearInterval(probeT); probeT = null;
         if (decideT) clearInterval(decideT); decideT = null;
+        if (has.net && win.navigator.connection && win.navigator.connection.removeEventListener) {
+          safe0(function () { win.navigator.connection.removeEventListener('change', onConnectionChange); });
+        }
       },
       force: function (lvl) { if (lvl >= 0 && lvl < LEVELS.length) { pinned = true; apply(lvl); } },
       get pinned() { return pinned; },
+      get connection() { return connectionInfo(); },
       onMetrics: onMetrics,
       onLongTask: onLongTask,
-      snapshot: function () { return { level: level, name: LEVELS[level].name, fpsAvg: Math.round(this.fpsAvg), busyRatio: Math.round(busyRatio * 100), probeDelay: Math.round(lastProbeDelay), escStreak: escStreak, relStreak: relStreak, pinned: pinned }; }
+      snapshot: function () { return { level: level, name: LEVELS[level].name, fpsAvg: Math.round(this.fpsAvg), busyRatio: Math.round(busyRatio * 100), probeDelay: Math.round(lastProbeDelay), escStreak: escStreak, relStreak: relStreak, pinned: pinned, connection: connectionInfo() }; }
     };
   })();
 

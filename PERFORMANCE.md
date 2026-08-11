@@ -366,6 +366,89 @@ only way to know a test is real is to watch it fail first.
 
 ---
 
+---
+
+## Pass 7 (v0.7.0) — connection-awareness, and what "network performance" honestly means here
+
+**Read this section's title literally.** Nothing added in this pass makes
+anyone's internet connection faster. Bandwidth and ISP latency are outside
+what any page script — or browser extension — can touch. This pass adds
+two things, both scoped to what's actually true:
+
+**1. `Adaptive` now reacts to real connection quality, not just FPS.**
+Before this pass, `Adaptive` only degraded quality in response to *device*
+weakness (low FPS, long tasks, main-thread contention). But this
+project's own stated audience is people with the least hardware *and
+software* — and a weak connection produces exactly the same symptom
+(a page that struggles to keep up) for a completely different reason that
+FPS-based detection can't see directly: images loading over a `slow-2g`
+connection don't make the CPU busy, they make the *user* wait, often
+followed by everything arriving at once and creating a burst of DOM/paint
+work exactly when the connection recovers. `Adaptive` now reads the real
+[Network Information API](https://developer.mozilla.org/en-US/docs/Web/API/Network_Information_API)
+(`navigator.connection` — Chromium only, confirmed absent in Firefox and
+Safari, not assumed) and immediately biases toward the most conservative
+level when `saveData` is on or `effectiveType` is `slow-2g`/`2g`,
+independent of how good the FPS happens to look. It also reacts to the
+browser's real `change` event in real time (a connection degrading
+mid-session, e.g. Wi-Fi to cellular) rather than waiting up to 2.5s for
+the next scheduled decision.
+
+**2. `zelvior-runtime/net`** — a new standalone module for reducing
+*redundant* network work: `dedupeFetch` collapses concurrent identical
+GET/HEAD requests into one real network call and optionally caches the
+result for a TTL; `preconnect` emits real browser resource hints so
+connection setup (DNS/TLS/TCP) happens before a request is actually made,
+not during it. Both are real, independently well-established techniques —
+request deduplication is the core idea behind libraries like SWR/React
+Query's caching layer; `preconnect`/`dns-prefetch` are standard browser
+features, not something this module invents.
+
+**What was actually verified, claim by claim:**
+
+| Claim | Verification | Result |
+|---|---|---|
+| A `saveData`/slow connection forces the conservative level regardless of FPS | Fed `decide()` metrics that would normally hold/improve the level (60fps) with a mocked slow connection present; asserted the level was forced to 3 anyway | Confirmed — and confirmed to genuinely fail without the fix (see below) |
+| A connection degrading mid-session reacts immediately, not after up to 2.5s | Mocked `navigator.connection`, fired a real `change` event, asserted the level changed synchronously within that same handler rather than needing to wait for the next `decide()` interval | Confirmed |
+| `Adaptive.stop()` doesn't leak the connection listener | Asserted `removeEventListener` is actually called | Confirmed |
+| `getConnectionInfo()` is honestly `null` on browsers without the API | jsdom genuinely has no Network Information API (confirmed: `'connection' in navigator` is `false`) — the "unsupported" path is tested for real, not mocked | Confirmed |
+| `dedupeFetch` reduces request *count* | Counted actual `fetch()` invocations directly (not timing) — 3 concurrent identical GETs → 1 real call; different URLs and POSTs are never coalesced; a failed request doesn't poison the cache for the next attempt | Confirmed |
+| `preconnect` emits real, deduplicated `<link>` tags | Counted actual DOM elements after calling it multiple times for the same and different origins | Confirmed |
+
+**Two real bugs the testing process itself caught, worth recording
+honestly:**
+
+1. `net.js`'s first draft referenced bare `navigator` (not `window.navigator`)
+   — Node 21+ defines its own built-in, non-configurable `navigator`
+   global, which meant the module would silently read *Node's* navigator
+   instead of any jsdom window's mocked one under `require()`, and
+   attempting to override it for testing threw
+   `Cannot set property navigator of #<Object> which has only a getter`.
+   This wasn't just a test-mocking inconvenience — it meant the module
+   was inconsistent with the rest of the module family (`events.js`,
+   `dom.js` correctly reference `window.X`, never bare globals) and would
+   have behaved unpredictably in any environment where `navigator` isn't
+   the expected browser one. Fixed by reading through `window.navigator`
+   throughout, matching the established convention.
+2. A second, now-familiar category of bug: `net.js`'s `hasConnection`
+   flag is computed once at module top-level (an intentional,
+   correct pattern — see `events.js`'s `hasRaf`). But Node's `require()`
+   cache means that computation only ever runs once per process; a test
+   file with multiple scenarios (unsupported, then mocked-as-supported)
+   got the *first* scenario's frozen value for every subsequent test,
+   silently. This is the same root cause as the `dom.js` module-state
+   leakage documented in earlier passes, now recognized as a pattern:
+   any test file that varies its environment mock across multiple test
+   cases against the same required module needs to explicitly bust
+   `require.cache` between them, not just set new globals and assume a
+   fresh module evaluation follows.
+
+Both were caught before shipping by the same discipline applied
+throughout this project: watch a test fail for the right reason before
+trusting that it passes for the right one.
+
+---
+
 ## How to verify these fixes yourself
 
 ```js

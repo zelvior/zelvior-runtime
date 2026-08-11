@@ -11,11 +11,12 @@ same IIFE scope, and are only "connected" when `Z.enable()` runs.
 src/
   zelvior.js       core runtime (single file, IIFE-bundled — see below)
   zelvior.d.ts
-  modules/         standalone, zero-coupling utilities (events/dom/scroll added v0.5.0, virtual added v0.6.0)
+  modules/         standalone, zero-coupling utilities (events/dom/scroll added v0.5.0, virtual added v0.6.0, net added v0.7.0)
     events.js      passiveOpts, throttleRaf, debounce, onFrame, onIdle, delegate
     dom.js         read/write batched DOM scheduler
     scroll.js      passive + rAF-throttled scroll listener (imports events.js)
     virtual.js     windowed list rendering — binary search over prefix-sum heights (imports scroll.js, dom.js)
+    net.js         request dedup/cache, preconnect hints, Network Information API wrapper (no dependency on other modules)
 dist/              built output (esm/cjs/iife × core, + esm/cjs × each module)
 test/              node:test + jsdom
 landing-page/      standalone demo page, loads the runtime from jsDelivr
@@ -54,9 +55,10 @@ visibilitychange ──┘─► Observer.fire('visibility') ─► pause/resume
 rAF loop (Metrics.tick) ─► every ≥500ms ─► snapshot ─► emit('metrics') ─► Adaptive.onMetrics
 PerformanceObserver(longtask) ─► Adaptive.onLongTask
 
-Adaptive.decide() [every 2.5s] ─► reads fpsHist + busyRatio + longRecent
+Adaptive.decide() [every 2.5s] ─► reads fpsHist + busyRatio + longRecent + connection
                                  ─► Optimizer.setConfig(...) (rootMargin/chunk/poll/observeAttrs)
                                  ─► Optimizer.reduceAnimations() / restoreAnimations()
+navigator.connection 'change' event (v0.7.0, Chromium only) ─► onConnectionChange() ─► immediate apply(3) if saveData/slow-2g/2g, bypassing the 2.5s decide() cadence
 ```
 
 Nothing here is a "framework" — every subsystem is a plain closure returning
@@ -105,6 +107,16 @@ A 4-level state machine (`quality` → `max`) driven by:
 - long-task count in the last decision window
 - a synthetic "idle probe" (scheduled `setTimeout(0)`, measures actual delay
   as a proxy for main-thread contention)
+- **(v0.7.0)** real connection quality via `navigator.connection`
+  (Chromium only) — `saveData` or `effectiveType` of `slow-2g`/`2g`
+  immediately forces the most conservative level, independent of FPS, and
+  reacts to the browser's own `change` event in real time rather than
+  waiting for the next 2.5s `decide()` tick. Deliberately asymmetric: a
+  connection *improving* does not immediately de-escalate — that still
+  requires the normal FPS-based hysteresis, same as `idle+smooth`
+  de-escalation elsewhere in this state machine, to avoid yo-yo behavior
+  on a flapping connection.
+- suppressed entirely while `pinned` (see below) or the tab is hidden
 
 Escalation requires 2 consecutive bad readings (`REQUIRED = 2`) to avoid
 thrashing between levels on a single noisy frame; de-escalation requires the
@@ -112,6 +124,11 @@ same hysteresis in the opposite direction. A startup probe
 (`startupProbe`) makes one immediate decision ~600ms after start so the
 runtime doesn't sit at the default `balanced` level for the full first
 decision interval (2.5s) on a device that's already struggling.
+
+`force(level)` (v0.6.1) sets `pinned = true`, which `decide()` and the
+connection-change handler both check and skip — a manually forced level
+holds until `start()` runs again (the signal for "resume auto-tuning"),
+not until the next favorable FPS reading happens to reset it.
 
 ### Recycler
 Plain per-tag-name array stack, capped at 64 nodes/tag. `release()` strips

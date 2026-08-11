@@ -2,12 +2,12 @@
 
 | File | Bytes | Gzip Bytes |
 |---|---|---|
-| dist/zelvior.esm.js | 29714 | 7632 |
-| dist/zelvior.esm.min.js | 15535 | 5928 |
-| dist/zelvior.cjs | 30723 | 7983 |
-| dist/zelvior.min.cjs | 15999 | 6148 |
-| dist/zelvior.js | 33092 | 8142 |
-| dist/zelvior.min.js | 16275 | 6230 |
+| dist/zelvior.esm.js | 31636 | 8069 |
+| dist/zelvior.esm.min.js | 16488 | 6130 |
+| dist/zelvior.cjs | 32645 | 8423 |
+| dist/zelvior.min.cjs | 16952 | 6349 |
+| dist/zelvior.js | 35108 | 8587 |
+| dist/zelvior.min.js | 17228 | 6434 |
 | dist/events.esm.js | 2814 | 962 |
 | dist/events.esm.min.js | 1641 | 738 |
 | dist/events.cjs | 3789 | 1284 |
@@ -24,3 +24,7 @@
 | dist/virtual.esm.min.js | 3373 | 1498 |
 | dist/virtual.cjs | 7993 | 2488 |
 | dist/virtual.min.cjs | 3813 | 1704 |
+| dist/net.esm.js | 2878 | 1063 |
+| dist/net.esm.min.js | 1764 | 850 |
+| dist/net.cjs | 3857 | 1385 |
+| dist/net.min.cjs | 2206 | 1051 |

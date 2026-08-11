@@ -37,7 +37,7 @@ async function main() {
 
   mkdirSync('dist', { recursive: true });
   copyFileSync('src/zelvior.d.ts', 'dist/zelvior.d.ts');
-  for (const name of ['events', 'dom', 'scroll', 'virtual']) {
+  for (const name of ['events', 'dom', 'scroll', 'virtual', 'net']) {
     copyFileSync(`src/modules/${name}.d.ts`, `dist/${name}.d.ts`);
   }
 
@@ -66,7 +66,7 @@ async function main() {
   // or the core runtime). ESM + CJS only: these are for bundler/import
   // consumers who want tree-shaking; script-tag/CDN users already have the
   // full Zelvior global from the targets above.
-  const moduleNames = ['events', 'dom', 'scroll', 'virtual'];
+  const moduleNames = ['events', 'dom', 'scroll', 'virtual', 'net'];
   for (const name of moduleNames) {
     const modEntry = `src/modules/${name}.js`;
     targets.push(

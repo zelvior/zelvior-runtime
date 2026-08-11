@@ -190,3 +190,114 @@ test('adaptive.force() actually sticks: decide() does not silently override a ma
 
   teardown(Z);
 });
+
+// --- Connection-awareness (v0.7.0) --------------------------------------
+// jsdom does not implement the Network Information API at all (confirmed:
+// 'connection' in navigator is false) -- which honestly matches real
+// Firefox and Safari, neither of which has ever implemented it. That lets
+// the "unsupported" path be tested for real without any mocking, and the
+// "supported" path is tested by injecting a mock connection object before
+// the runtime script evaluates (matching how a real Chromium browser
+// exposes navigator.connection).
+
+test('adaptive.connection is null on a browser without the Network Information API (honest, not a fast-connection default)', () => {
+  const { Z } = setup();
+  assert.equal(Z.features.net, false, 'sanity: jsdom genuinely does not implement this API');
+  assert.equal(Z.adaptive.connection, null);
+  teardown(Z);
+});
+
+test('a slow connection (saveData) immediately forces the conservative level, independent of FPS', async () => {
+  const dom = new JSDOM('<!doctype html><html><body></body></html>', {
+    url: 'https://example.com/', runScripts: 'outside-only', pretendToBeVisual: true,
+  });
+  global.window = dom.window;
+  global.document = dom.window.document;
+  const listeners = {};
+  Object.defineProperty(dom.window.navigator, 'connection', {
+    value: {
+      effectiveType: '4g',
+      saveData: true, // <- the trigger
+      downlink: 10,
+      rtt: 50,
+      addEventListener: (type, fn) => { listeners[type] = fn; },
+      removeEventListener: (type) => { delete listeners[type]; },
+    },
+    configurable: true,
+  });
+  window.eval(source);
+  const Z = window.Zelvior;
+
+  assert.equal(Z.features.net, true, 'sanity: mock connection should be detected');
+  Z.enable({ adaptive: true });
+  await new Promise((r) => setTimeout(r, 700)); // let startup probe finish first
+
+  // Feed decide() metrics that would normally keep/improve the level (great FPS).
+  for (let i = 0; i < 6; i++) Z.adaptive.onMetrics({ fps: 60 });
+  await new Promise((r) => setTimeout(r, 3000)); // at least one decide() tick
+
+  assert.equal(Z.adaptive.level, 3, 'saveData should force the most conservative level regardless of good FPS');
+  const conn = Z.adaptive.connection;
+  assert.equal(conn.effectiveType, '4g');
+  assert.equal(conn.saveData, true);
+  assert.equal(conn.downlink, 10);
+  assert.equal(conn.rtt, 50);
+
+  teardown(Z);
+});
+
+test('the connection "change" event triggers an immediate reaction, not waiting for the next decide() tick', async () => {
+  const dom = new JSDOM('<!doctype html><html><body></body></html>', {
+    url: 'https://example.com/', runScripts: 'outside-only', pretendToBeVisual: true,
+  });
+  global.window = dom.window;
+  global.document = dom.window.document;
+  const listeners = {};
+  const mockConnection = {
+    effectiveType: '4g', saveData: false, downlink: 10, rtt: 50,
+    addEventListener: (type, fn) => { listeners[type] = fn; },
+    removeEventListener: (type) => { delete listeners[type]; },
+  };
+  Object.defineProperty(dom.window.navigator, 'connection', { value: mockConnection, configurable: true });
+  window.eval(source);
+  const Z = window.Zelvior;
+  Z.enable({ adaptive: true });
+  await new Promise((r) => setTimeout(r, 700));
+
+  assert.equal(Z.adaptive.level, 1, 'sanity: should be at the normal default level before any degradation');
+  assert.ok(typeof listeners.change === 'function', 'Adaptive.start() should have registered a real change listener');
+
+  // Simulate the connection degrading mid-session (e.g. wifi -> cellular)
+  // and the browser firing its real 'change' event.
+  mockConnection.effectiveType = '2g';
+  listeners.change();
+
+  // No waiting for a decide() interval tick -- the change handler should
+  // have reacted synchronously (well, within this same macrotask).
+  assert.equal(Z.adaptive.level, 3, 'a connection degrading should react immediately via the change event, not wait up to 2.5s for the next decide() tick');
+
+  teardown(Z);
+});
+
+test('Adaptive.stop() removes the connection change listener (no leak)', async () => {
+  const dom = new JSDOM('<!doctype html><html><body></body></html>', {
+    url: 'https://example.com/', runScripts: 'outside-only', pretendToBeVisual: true,
+  });
+  global.window = dom.window;
+  global.document = dom.window.document;
+  let removed = false;
+  Object.defineProperty(dom.window.navigator, 'connection', {
+    value: {
+      effectiveType: '4g', saveData: false, downlink: 10, rtt: 50,
+      addEventListener: () => {},
+      removeEventListener: () => { removed = true; },
+    },
+    configurable: true,
+  });
+  window.eval(source);
+  const Z = window.Zelvior;
+  Z.enable({ adaptive: true });
+  await new Promise((r) => setTimeout(r, 50));
+  Z.disable();
+  assert.equal(removed, true, 'stop() should unregister the connection change listener');
+});

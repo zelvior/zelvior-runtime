@@ -6,14 +6,20 @@
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 Dependency-free, adaptive browser runtime for lazy-loading, scheduling, and
-self-tuning performance based on live device/browser conditions. **~16.2KB
-minified, ~6.0KB gzipped, zero runtime dependencies.**
+self-tuning performance based on live device/browser conditions. **~16.8KB
+minified, ~6.3KB gzipped, zero runtime dependencies.**
 
-> **Version note:** this package is at v0.6.1 locally. npm's latest
-> published release is v0.6.0 (confirmed live by downloading the actual
-> tarball — `package.json` and the bundled `Z.version` string agree this
-> time, no mismatch). v0.6.1 (this version) fixes a real bug where
-> `Zelvior.adaptive.force()` didn't actually stick — see CHANGELOG.md.
+> **Version note:** this package is at v0.7.0 locally. npm's latest
+> published release is v0.6.1 (confirmed live). v0.7.0 (this version)
+> adds real connection-awareness to `Adaptive` and a new
+> `zelvior-runtime/net` module — see the Modules section above and
+> CHANGELOG.md. Worth being direct about: this does **not** make your
+> internet connection faster; it reduces redundant requests and reacts to
+> a genuinely slow/metered connection the same way it already reacts to
+> weak hardware. Core bundle size grew (~16.2KB → ~16.8KB minified) for
+> this — the connection-awareness logic lives in core `Adaptive`, not a
+> separate zero-coupling module, since it's a natural extension of
+> Adaptive's existing signals.
 
 > **About `npm WARN Zelvior No description`/`No repository field`/etc.:**
 > if you see these while running `npm install zelvior-runtime`, they are
@@ -82,7 +88,7 @@ Unlike the subsystems above, these are genuinely separate from the core
 runtime — importing one does not pull in `Zelvior` or any other module.
 None of them are loaded or run unless you import them; none change any
 browser default behavior on their own. `events`/`dom`/`scroll` added in
-v0.5.0; `virtual` added in v0.6.0.
+v0.5.0; `virtual` added in v0.6.0; `net` added in v0.7.0.
 
 ### `zelvior-runtime/events`
 
@@ -244,12 +250,57 @@ removes every node and stops responding to further scroll events.
 scrolls natively; this only changes which children exist inside it at any
 given moment.
 
+### `zelvior-runtime/net`
+
+**Read this before anything else in this section:** nothing here "speeds
+up your internet." No JavaScript running in a page or extension can
+increase your bandwidth or reduce your ISP's latency — anything that
+claims to is not telling the truth, and this module doesn't claim to.
+What it actually does is reduce *redundant* network work and shave real,
+specific latency off connection *setup* — both genuine, well-established
+techniques, scoped honestly.
+
+```js
+import { dedupeFetch, preconnect, getConnectionInfo, onConnectionChange } from 'zelvior-runtime/net';
+
+// Multiple callers asking for the same GET at once share one real request.
+const data = await dedupeFetch('/api/user', { ttl: 30000 }); // cache for 30s
+
+// Warm the connection to a host before you actually need it.
+preconnect('https://api.example.com');
+
+// Real Network Information API (Chromium only), never guessed.
+const info = getConnectionInfo(); // { effectiveType, saveData, downlink, rtt } | null
+const unsubscribe = onConnectionChange((info) => { /* ... */ });
+```
+
+| Export | What it actually does | The honest limit |
+|---|---|---|
+| `dedupeFetch(url, opts)` | Coalesces concurrent identical GET/HEAD requests into one real network call; optionally caches the resolved response for `opts.ttl` ms. POST/PUT/DELETE are never auto-coalesced (assumed to have side effects) unless you explicitly opt in via `opts.dedupeKey`. | Reduces request *count*. Does not make any individual request arrive faster. |
+| `preconnect(origin)` | Emits real `<link rel="preconnect">` + `dns-prefetch` tags (idempotent per origin) so the browser can do DNS/TLS/TCP setup before you request something from that host. | Only removes connection-*setup* latency for a request you're about to make. Does nothing for a request you never make, and nothing for the request itself once the connection exists. |
+| `getConnectionInfo()` / `onConnectionChange(fn)` | Thin, null-safe wrapper around the real [Network Information API](https://developer.mozilla.org/en-US/docs/Web/API/Network_Information_API). | **Chromium only** — Firefox and Safari have never implemented this API. Returns `null` / never fires on those browsers, honestly, rather than guessing a value. |
+
+**Verified in `test/net.test.mjs`:** `dedupeFetch` is checked by literally
+counting real `fetch()` calls (3 concurrent identical requests → 1 real
+call; different URLs or POSTs → never coalesced; a failed request doesn't
+poison the cache for the next attempt). `preconnect` is checked by
+counting actual `<link>` elements in the DOM. The connection wrappers are
+checked against both a real "unsupported" jsdom environment (which
+genuinely has no Network Information API, matching Firefox/Safari) and a
+mocked "supported" one.
+
+**Does it modify native browser behavior?** `preconnect` uses a real,
+standard browser hint mechanism — the browser decides what to do with it,
+same as if you'd written the `<link>` tag yourself. `dedupeFetch` changes
+nothing about `fetch()` itself; it only decides whether to reuse a
+Promise instead of calling `fetch()` again.
+
 ## Subsystems
 
 - `Zelvior.scheduler` — priority task queue (`add`, `addIdle`, `nextFrame`, `whenIdle`, `clear`, `pending`)
 - `Zelvior.observer` — unified mutation/resize/scroll/intersection/visibility event bus (`on`, `off`, `watch`, `unwatch`)
 - `Zelvior.optimizer` — image lazy-load, reduced-motion CSS injection, chunked work (`split`), write batching (`batch`)
-- `Zelvior.adaptive` — self-tuning quality level (`quality` → `balanced` → `efficient` → `max`) driven by FPS/long-tasks/main-thread busy ratio
+- `Zelvior.adaptive` — self-tuning quality level (`quality` → `balanced` → `efficient` → `max`) driven by FPS/long-tasks/main-thread busy ratio, **and, since v0.7.0, real connection quality** (`saveData`/`effectiveType` via the Network Information API where supported — see `Zelvior.adaptive.connection`) — a Data Saver user or a `slow-2g`/`2g` connection immediately biases toward the conservative level, independent of how good the FPS looks
 - `Zelvior.recycler` — DOM node pooling (`acquire`, `release`)
 - `Zelvior.memory` — TTL cache + detached-node leak tracking (`set`, `get`, `track`, `leaks`)
 - `Zelvior.metrics` — FPS, memory, DOM count, long tasks, paint, CLS (`snapshot`)
@@ -379,7 +430,7 @@ package, not a 404 placeholder.)
 
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — subsystem internals and data flow
 - [PERFORMANCE.md](./PERFORMANCE.md) — full audit log: every defect found, why it mattered, and the fix
-- [CHANGELOG.md](./CHANGELOG.md) — version history (v0.6.1: fixed `adaptive.force()` not actually sticking, added storage-error handling to the extension, and caught a real false-positive bug in the test suite itself — see PERFORMANCE.md "Pass 6")
+- [CHANGELOG.md](./CHANGELOG.md) — version history (v0.7.0: real connection-awareness added to `Adaptive`, new `zelvior-runtime/net` module for request dedup/caching/preconnect — honestly scoped, does not "speed up the internet")
 
 ## Building from source
 

@@ -1,5 +1,67 @@
 # Changelog
 
+## v0.7.0
+
+Connection-awareness — read the honesty note before anything else:
+**nothing in this release makes anyone's internet connection faster.**
+Bandwidth and ISP latency are outside what any page script can touch.
+What this release actually does: reduces redundant network requests, cuts
+real connection-*setup* latency via standard browser hints, and makes the
+existing `Adaptive` system react to a genuinely slow/metered connection
+the same way it already reacts to weak hardware. See `PERFORMANCE.md`
+("Pass 7") for the full, honest breakdown.
+
+### Added
+- **`Adaptive` connection-awareness.** Reads the real [Network Information
+  API](https://developer.mozilla.org/en-US/docs/Web/API/Network_Information_API)
+  (`navigator.connection` — Chromium only, confirmed absent in Firefox/
+  Safari via jsdom rather than assumed) and immediately forces the most
+  conservative quality level when `saveData` is on or `effectiveType` is
+  `slow-2g`/`2g`, independent of FPS. Reacts to the browser's real
+  `change` event immediately, not just on the next 2.5s `decide()` tick.
+  New public surface: `Zelvior.adaptive.connection` (getter),
+  `snapshot().connection`, and `connection`/`pinned` on the
+  `adaptive:level` event payload.
+- **`zelvior-runtime/net`** — `dedupeFetch(url, opts)` (coalesces
+  concurrent identical GET/HEAD requests, optional TTL cache; POST/PUT/
+  DELETE never auto-coalesced), `preconnect(origin)` (real, deduplicated
+  `<link rel="preconnect">`/`dns-prefetch` hints), `getConnectionInfo()`/
+  `onConnectionChange(fn)` (null-safe Network Information API wrapper).
+- `test/net.test.mjs` — 11 new tests. 4 more added to
+  `test/basic.test.mjs` for the `Adaptive` connection wiring. 46/46 total
+  tests passing project-wide (31 prior + 4 + 11).
+- `src/modules/net.d.ts`, `./net` and `./net/min` package exports.
+
+### Changed
+- Core `zelvior.js` bundle size grew (~16.2KB → ~16.8KB minified) for
+  this release — the connection-awareness logic lives in core `Adaptive`
+  (a natural extension of its existing FPS/long-task signals, and it
+  needs to interact with `decide()`'s existing hysteresis/pinning state
+  directly), not a separate zero-coupling module like `events`/`dom`/
+  `scroll`/`virtual`/`net` are. Those five still add zero bytes to the
+  core bundle, unchanged from prior releases.
+- Extension popup: added a "Connection" row to the live metrics grid,
+  showing `effectiveType`/Data Saver status when available, or an honest
+  "Not reported here" (not a misleading blank dash) on browsers without
+  the API.
+
+### Fixed
+- **Found during testing, not in the shipped feature itself:** `net.js`'s
+  first draft referenced bare `navigator`, colliding with Node 21+'s own
+  built-in non-configurable `navigator` global — under `require()`, the
+  module would silently read Node's navigator instead of any test
+  environment's mocked one, and inconsistent with the rest of the module
+  family (`events.js`/`dom.js` correctly use `window.X`, never bare
+  globals). Fixed by reading through `window.navigator` throughout.
+- **A second instance of a now-recognized pattern:** `net.js`'s
+  `hasConnection` flag, computed once at module top-level (a correct,
+  intentional pattern), got silently frozen across different test
+  scenarios in the same file due to Node's `require()` module cache.
+  Fixed by explicitly busting `require.cache` between test scenarios that
+  vary the mocked environment — the same root cause as the `dom.js`
+  module-state leakage found in the `virtual` module's tests (v0.6.0),
+  now understood as a repeatable methodology lesson, not a one-off.
+
 ## v0.6.1
 
 Real functional fixes to the extension, found by tracing actual behavior
