@@ -1,35 +1,58 @@
 // Zelvior Runtime — MIT — https://github.com/zelvior/zelvior-runtime
-var Zelvior = (() => {
+var Zelvior = (function() {
   var __defProp = Object.defineProperty;
   var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
   var __getOwnPropNames = Object.getOwnPropertyNames;
   var __hasOwnProp = Object.prototype.hasOwnProperty;
-  var __export = (target, all) => {
+  var __export = function(target, all) {
     for (var name in all)
       __defProp(target, name, { get: all[name], enumerable: true });
   };
-  var __copyProps = (to, from, except, desc) => {
-    if (from && typeof from === "object" || typeof from === "function") {
-      for (let key of __getOwnPropNames(from))
+  var __copyProps = function(to, from, except, desc) {
+    if (from && typeof from === "object" || typeof from === "function")
+      for (var keys = __getOwnPropNames(from), i = 0, n = keys.length, key; i < n; i++) {
+        key = keys[i];
         if (!__hasOwnProp.call(to, key) && key !== except)
-          __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
-    }
+          __defProp(to, key, { get: function(k) {
+            return from[k];
+          }.bind(null, key), enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+      }
     return to;
   };
-  var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+  var __toCommonJS = function(mod) {
+    return __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+  };
 
   // src/zelvior.js
   var zelvior_exports = {};
   __export(zelvior_exports, {
-    Adaptive: () => Adaptive,
-    Memory: () => Memory,
-    Metrics: () => Metrics,
-    Observer: () => Observer,
-    Optimizer: () => Optimizer,
-    Plugins: () => Plugins,
-    Recycler: () => Recycler,
-    Scheduler: () => Scheduler,
-    default: () => zelvior_default
+    Adaptive: function() {
+      return Adaptive;
+    },
+    Memory: function() {
+      return Memory;
+    },
+    Metrics: function() {
+      return Metrics;
+    },
+    Observer: function() {
+      return Observer;
+    },
+    Optimizer: function() {
+      return Optimizer;
+    },
+    Plugins: function() {
+      return Plugins;
+    },
+    Recycler: function() {
+      return Recycler;
+    },
+    Scheduler: function() {
+      return Scheduler;
+    },
+    default: function() {
+      return zelvior_default;
+    }
   });
   var Z = { version: "0.9.1" };
   var enabled = false;
@@ -101,7 +124,7 @@ var Zelvior = (() => {
   function emit(type, detail) {
     if (!has.cle) return;
     try {
-      win.dispatchEvent(new CustomEvent("zelvior:" + type, { detail }));
+      win.dispatchEvent(new CustomEvent("zelvior:" + type, { detail: detail }));
     } catch (e) {
     }
   }
@@ -256,7 +279,7 @@ var Zelvior = (() => {
       raf(doScroll);
     }
     return {
-      on,
+      on: on,
       off: function(type, fn) {
         var arr = listeners[type];
         if (!arr) return;
@@ -324,7 +347,7 @@ var Zelvior = (() => {
             ioc.observe(el);
           });
         } else {
-          let check = function() {
+          var check = function() {
             try {
               var r = el.getBoundingClientRect();
               var vh = win.innerHeight || DE.clientHeight;
@@ -430,8 +453,8 @@ var Zelvior = (() => {
       Observer.watch(img, onImgVisible, { rootMargin: config.rootMargin });
     }
     return {
-      profile: { reducedMotion, saveData, effectiveType, slow },
-      config,
+      profile: { reducedMotion: reducedMotion, saveData: saveData, effectiveType: effectiveType, slow: slow },
+      config: config,
       setConfig: function(cfg) {
         for (var k in cfg) if (cfg.hasOwnProperty(k)) config[k] = cfg[k];
         emit("config", config);
@@ -613,7 +636,7 @@ var Zelvior = (() => {
       });
       if (cfg.reduceAnim) Optimizer.reduceAnimations(true);
       else Optimizer.restoreAnimations();
-      emit("adaptive:level", { level: lvl, name: cfg.name, config: cfg, pinned });
+      emit("adaptive:level", { level: lvl, name: cfg.name, config: cfg, pinned: pinned });
     }
     function probeIdle() {
       if (has.vis && doc.hidden) return;
@@ -675,7 +698,7 @@ var Zelvior = (() => {
         escStreak = 0;
         relStreak = 0;
         apply(3);
-        emit("adaptive:reason", { reason: "critical-fps", avg: Math.round(avg), recent });
+        emit("adaptive:reason", { reason: "critical-fps", avg: Math.round(avg), recent: recent });
         return;
       }
       if (avg < 35) {
@@ -730,12 +753,12 @@ var Zelvior = (() => {
           if (rafDelta > 50 || totalDelay > 80) apply(3);
           else if (rafDelta > 30 || totalDelay > 50) apply(2);
           else apply(1);
-          emit("adaptive:startup", { rafDelta: Math.round(rafDelta), totalDelay: Math.round(totalDelay), level });
+          emit("adaptive:startup", { rafDelta: Math.round(rafDelta), totalDelay: Math.round(totalDelay), level: level });
         }, 0);
       });
     }
     return {
-      LEVELS,
+      LEVELS: LEVELS,
       get level() {
         return level;
       },
@@ -793,10 +816,10 @@ var Zelvior = (() => {
       get connection() {
         return connectionInfo();
       },
-      onMetrics,
-      onLongTask,
+      onMetrics: onMetrics,
+      onLongTask: onLongTask,
       snapshot: function() {
-        return { level, name: LEVELS[level].name, fpsAvg: Math.round(this.fpsAvg), busyRatio: Math.round(busyRatio * 100), probeDelay: Math.round(lastProbeDelay), escStreak, relStreak, pinned, connection: connectionInfo() };
+        return { level: level, name: LEVELS[level].name, fpsAvg: Math.round(this.fpsAvg), busyRatio: Math.round(busyRatio * 100), probeDelay: Math.round(lastProbeDelay), escStreak: escStreak, relStreak: relStreak, pinned: pinned, connection: connectionInfo() };
       }
     };
   }();
@@ -857,12 +880,12 @@ var Zelvior = (() => {
           removed++;
         }
       });
-      if (removed) emit("cache:sweep", { removed, size: cache.size });
+      if (removed) emit("cache:sweep", { removed: removed, size: cache.size });
       return removed;
     }
     return {
       set: function(k, v, ttl) {
-        cache.set(k, { v, exp: ttl ? now() + ttl : 0 });
+        cache.set(k, { v: v, exp: ttl ? now() + ttl : 0 });
       },
       get: function(k) {
         var e = cache.get(k);
@@ -895,7 +918,7 @@ var Zelvior = (() => {
       track: function(node) {
         if (!node) return;
         if (detached) detached.add(node);
-        leakRefs.push({ node, ts: now() });
+        leakRefs.push({ node: node, ts: now() });
         if (leakRefs.length > 200) leakRefs.shift();
       },
       isTracked: function(node) {
@@ -910,7 +933,7 @@ var Zelvior = (() => {
         }
         return { tracked: leakRefs.length, detached: live, attached: dead, cacheSize: cache.size };
       },
-      sweep
+      sweep: sweep
     };
   }();
   var Metrics = /* @__PURE__ */ function() {
@@ -1052,7 +1075,7 @@ var Zelvior = (() => {
         if (!plugin || !plugin.name) return false;
         list.push(plugin);
         if (typeof plugin.init === "function") safe0(function() {
-          plugin.init({ Z });
+          plugin.init({ Z: Z });
         });
         emit("plugin:register", { name: plugin.name });
         return true;

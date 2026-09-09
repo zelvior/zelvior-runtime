@@ -2,12 +2,14 @@
 
 | File | Bytes | Gzip Bytes |
 |---|---|---|
-| dist/zelvior.esm.js | 31636 | 8069 |
-| dist/zelvior.esm.min.js | 16488 | 6130 |
-| dist/zelvior.cjs | 32645 | 8423 |
-| dist/zelvior.min.cjs | 16952 | 6349 |
-| dist/zelvior.js | 35108 | 8587 |
-| dist/zelvior.min.js | 17228 | 6434 |
+| dist/zelvior.esm.js | 34987 | 8861 |
+| dist/zelvior.esm.min.js | 18585 | 6721 |
+| dist/zelvior.cjs | 35996 | 9223 |
+| dist/zelvior.min.cjs | 19050 | 6941 |
+| dist/zelvior.js | 38675 | 9386 |
+| dist/zelvior.min.js | 19326 | 7026 |
+| dist/zelvior.legacy.js | 39261 | 9491 |
+| dist/zelvior.legacy.min.js | 19561 | 7073 |
 | dist/events.esm.js | 2814 | 962 |
 | dist/events.esm.min.js | 1641 | 738 |
 | dist/events.cjs | 3789 | 1284 |
@@ -28,3 +30,31 @@
 | dist/net.esm.min.js | 1764 | 850 |
 | dist/net.cjs | 3857 | 1385 |
 | dist/net.min.cjs | 2206 | 1051 |
+| dist/storage.esm.js | 7261 | 1504 |
+| dist/storage.esm.min.js | 4234 | 1250 |
+| dist/storage.cjs | 8199 | 1831 |
+| dist/storage.min.cjs | 4674 | 1461 |
+| dist/tier.esm.js | 1629 | 677 |
+| dist/tier.esm.min.js | 966 | 581 |
+| dist/tier.cjs | 2517 | 999 |
+| dist/tier.min.cjs | 1404 | 785 |
+| dist/raf.esm.js | 1020 | 489 |
+| dist/raf.esm.min.js | 655 | 411 |
+| dist/raf.cjs | 1949 | 826 |
+| dist/raf.min.cjs | 1096 | 625 |
+| dist/idle.esm.js | 1300 | 594 |
+| dist/idle.esm.min.js | 762 | 441 |
+| dist/idle.cjs | 2217 | 933 |
+| dist/idle.min.cjs | 1202 | 658 |
+| dist/resize.esm.js | 2281 | 831 |
+| dist/resize.esm.min.js | 1170 | 638 |
+| dist/resize.cjs | 3190 | 1157 |
+| dist/resize.min.cjs | 1609 | 851 |
+| dist/intersect.esm.js | 2739 | 1002 |
+| dist/intersect.esm.min.js | 1492 | 789 |
+| dist/intersect.cjs | 3666 | 1321 |
+| dist/intersect.min.cjs | 1931 | 999 |
+| dist/paint.esm.js | 933 | 427 |
+| dist/paint.esm.min.js | 577 | 363 |
+| dist/paint.cjs | 1844 | 770 |
+| dist/paint.min.cjs | 1017 | 584 |

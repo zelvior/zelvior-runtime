@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.9.1
+
+### Changed
+- **`Z.lite` is now brutal, not cosmetic.** Previously it only added a CSS override layer. Now it also actively deletes matching inline `style` properties (`boxShadow`, `filter`, `backdropFilter`, `mixBlendMode`, `willChange`, `animation`, `transition`, gradient `backgroundImage`, and their `-webkit-` equivalents) element by element, and removes SVG `<filter>` definitions from the DOM outright, so nothing survives to reinstate the effect via `!important` inline styles or `filter: url(#id)` references. Re-runs on every DOM mutation while active (via the existing shared `Observer`), so dynamically inserted content gets stripped too. Still default OFF.
+
+## v0.9.0
+
+### Added
+- **`tier`, `raf`, `idle`, `resize`, `intersect`, `paint` modules.** Device-capability detection, a shared rAF scheduler, an `idle`/`idleEach` helper with a real `setTimeout` fallback, shared `ResizeObserver`/`IntersectionObserver` fan-out (one observer instance instead of one per element), and a FastDOM-style read/write batcher.
+- **`storage` module.** IndexedDB-first key/value store with automatic localStorage fallback and an explicit `mode: 'auto'|'idb'|'local'` control; all-Promise API regardless of backend.
+- **`zelvior.legacy.js` / `.legacy.min.js`.** An es5-target build for browsers without native ES2017 syntax support (old WebKit/Firefox on very old hardware). Feature detection at runtime is unchanged — this only changes the *syntax* the bundle is written in.
+- **`Z.lite` — visual-simplification mode.** Default **disabled**. When enabled, strips `box-shadow`, `text-shadow`, `filter`, `backdrop-filter` (glassmorphism blur), and forces native scrollbars in place of custom/overlay ones, cutting paint/composite cost on the lowest-end hardware. `Z.lite.enable()` / `.disable()` / `.isActive()`, or pass `{ lite: true }` to `Z.enable()`. Opt-in because it visibly changes page appearance.
+
 ## v0.7.0
 
 Connection-awareness — read the honesty note before anything else:

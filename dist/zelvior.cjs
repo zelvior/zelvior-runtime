@@ -31,7 +31,7 @@ __export(zelvior_exports, {
   default: () => zelvior_default
 });
 module.exports = __toCommonJS(zelvior_exports);
-var Z = { version: "0.7.0" };
+var Z = { version: "0.9.1" };
 var enabled = false;
 var doc = document;
 var win = window;
@@ -483,6 +483,104 @@ var Optimizer = function() {
     },
     shouldDefer: function() {
       return slow || saveData;
+    }
+  };
+}();
+var Lite = function() {
+  var active = false;
+  var STYLE_ID = "lite";
+  var CSS = [
+    "*,*::before,*::after{",
+    "box-shadow:none!important;",
+    "text-shadow:none!important;",
+    "filter:none!important;",
+    "-webkit-backdrop-filter:none!important;",
+    "backdrop-filter:none!important;",
+    "background-blend-mode:normal!important;",
+    "mix-blend-mode:normal!important;",
+    "will-change:auto!important;",
+    "text-decoration-color:currentColor!important;",
+    "animation:none!important;",
+    "transition:none!important;",
+    "}",
+    // Gradients/blurred backgrounds specifically (not every background,
+    // real photo/pattern backgrounds are left alone).
+    '[style*="gradient"]{background-image:none!important;}',
+    "html,body,*{scrollbar-width:auto!important;}",
+    "::-webkit-scrollbar{width:auto!important;height:auto!important;background:initial!important;}",
+    "::-webkit-scrollbar-thumb,::-webkit-scrollbar-track,::-webkit-scrollbar-corner{background:initial!important;border:initial!important;box-shadow:none!important;}"
+  ].join("");
+  var STRIP_PROPS = [
+    "boxShadow",
+    "webkitBoxShadow",
+    "textShadow",
+    "filter",
+    "webkitFilter",
+    "backdropFilter",
+    "webkitBackdropFilter",
+    "mixBlendMode",
+    "backgroundBlendMode",
+    "willChange",
+    "animation",
+    "webkitAnimation",
+    "transition",
+    "webkitTransition"
+  ];
+  function stripInlineStyles(root) {
+    var els = byAll(root || doc);
+    for (var i = 0; i < els.length; i++) {
+      var s = els[i].style;
+      if (!s || !s.length) continue;
+      for (var j = 0; j < STRIP_PROPS.length; j++) {
+        var p = STRIP_PROPS[j];
+        if (s[p]) s[p] = "";
+      }
+      var bg = s.backgroundImage;
+      if (bg && bg.indexOf("gradient") > -1) s.backgroundImage = "";
+    }
+  }
+  function stripSvgFilters(root) {
+    var svgFilters = (root || doc).querySelectorAll ? (root || doc).querySelectorAll("filter") : [];
+    for (var i = 0; i < svgFilters.length; i++) {
+      var f = svgFilters[i];
+      if (f.parentNode) f.parentNode.removeChild(f);
+    }
+  }
+  function onMutation() {
+    safe0(function() {
+      stripInlineStyles(doc);
+      stripSvgFilters(doc);
+    });
+  }
+  return {
+    isActive: function() {
+      return active;
+    },
+    enable: function() {
+      if (active) return false;
+      safe0(function() {
+        if (!doc.querySelector('style[data-zelvior="' + STYLE_ID + '"]')) {
+          var style = doc.createElement("style");
+          style.setAttribute("data-zelvior", STYLE_ID);
+          style.textContent = CSS;
+          doc.head.appendChild(style);
+        }
+        stripInlineStyles(doc);
+        stripSvgFilters(doc);
+      });
+      Observer.on("mutation", onMutation);
+      active = true;
+      emit("lite:enable", {});
+      return true;
+    },
+    disable: function() {
+      safe0(function() {
+        var s = doc.querySelector('style[data-zelvior="' + STYLE_ID + '"]');
+        if (s && s.parentNode) s.parentNode.removeChild(s);
+      });
+      Observer.off("mutation", onMutation);
+      active = false;
+      emit("lite:disable", {});
     }
   };
 }();
@@ -1056,6 +1154,9 @@ Z.enable = function(opts) {
     Adaptive.start();
   });
   if (opts.enhance !== false) safe0(applyEnhancements);
+  if (opts.lite === true) safe0(function() {
+    Lite.enable();
+  });
   emit("enable", { profile: Optimizer.profile });
   return Z;
 };
@@ -1087,6 +1188,13 @@ Z.metrics = Metrics;
 Z.plugins = Plugins;
 Z.adaptive = Adaptive;
 Z.features = has;
+Z.lite = { enable: function() {
+  return Lite.enable();
+}, disable: function() {
+  return Lite.disable();
+}, isActive: function() {
+  return Lite.isActive();
+} };
 Z.isEnabled = function() {
   return enabled;
 };

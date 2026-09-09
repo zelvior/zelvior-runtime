@@ -1,7 +1,7 @@
 // Zelvior Runtime v0.3 — MIT
 // ESM source of truth; bundled to esm/cjs/iife by build.mjs
 
-  var Z = { version: '0.7.0' };
+  var Z = { version: '0.9.1' };
   var enabled = false;
   var doc = document, win = window, DE = doc.documentElement;
   var subs = {};
@@ -272,6 +272,108 @@
       shouldDefer: function () { return slow || saveData; }
     };
   })();
+
+  var Lite = (function () {
+    var active = false;
+    var STYLE_ID = 'lite';
+    // Brutal mode: this does not just visually suppress the expensive
+    // paint/composite layer via CSS override -- it strips the actual
+    // inline-style declarations and SVG filter primitives that cause it,
+    // so nothing is left for a later stylesheet, inline `style=""` write,
+    // or SVG `<filter>` reference to reinstate. This is a deliberate,
+    // aggressive quality trade -- default OFF, opt-in only.
+    var CSS = [
+      '*,*::before,*::after{',
+      'box-shadow:none!important;',
+      'text-shadow:none!important;',
+      'filter:none!important;',
+      '-webkit-backdrop-filter:none!important;',
+      'backdrop-filter:none!important;',
+      'background-blend-mode:normal!important;',
+      'mix-blend-mode:normal!important;',
+      'will-change:auto!important;',
+      'text-decoration-color:currentColor!important;',
+      'animation:none!important;',
+      'transition:none!important;',
+      '}',
+      // Gradients/blurred backgrounds specifically (not every background,
+      // real photo/pattern backgrounds are left alone).
+      '[style*="gradient"]{background-image:none!important;}',
+      'html,body,*{scrollbar-width:auto!important;}',
+      '::-webkit-scrollbar{width:auto!important;height:auto!important;background:initial!important;}',
+      '::-webkit-scrollbar-thumb,::-webkit-scrollbar-track,::-webkit-scrollbar-corner{background:initial!important;border:initial!important;box-shadow:none!important;}'
+    ].join('');
+
+    // Inline-style properties actively deleted from every element's own
+    // `style` attribute (CSS !important above only defeats these when they
+    // come from stylesheets/inline non-!important rules -- an inline
+    // `style="filter:blur(8px)!important"` would otherwise survive).
+    var STRIP_PROPS = [
+      'boxShadow', 'webkitBoxShadow', 'textShadow', 'filter', 'webkitFilter',
+      'backdropFilter', 'webkitBackdropFilter', 'mixBlendMode',
+      'backgroundBlendMode', 'willChange', 'animation', 'webkitAnimation',
+      'transition', 'webkitTransition'
+    ];
+
+    function stripInlineStyles(root) {
+      var els = byAll(root || doc);
+      for (var i = 0; i < els.length; i++) {
+        var s = els[i].style;
+        if (!s || !s.length) continue;
+        for (var j = 0; j < STRIP_PROPS.length; j++) {
+          var p = STRIP_PROPS[j];
+          if (s[p]) s[p] = '';
+        }
+        var bg = s.backgroundImage;
+        if (bg && bg.indexOf('gradient') > -1) s.backgroundImage = '';
+      }
+    }
+
+    // SVG <filter> elements back drop-shadow/blur/glow effects referenced
+    // via `filter: url(#id)`, which the CSS `filter:none!important` rule
+    // above already neutralizes -- this removes the definitions outright
+    // so nothing can re-reference them.
+    function stripSvgFilters(root) {
+      var svgFilters = (root || doc).querySelectorAll ? (root || doc).querySelectorAll('filter') : [];
+      for (var i = 0; i < svgFilters.length; i++) {
+        var f = svgFilters[i];
+        if (f.parentNode) f.parentNode.removeChild(f);
+      }
+    }
+
+    function onMutation() { safe0(function () { stripInlineStyles(doc); stripSvgFilters(doc); }); }
+
+    return {
+      isActive: function () { return active; },
+      enable: function () {
+        if (active) return false;
+        safe0(function () {
+          if (!doc.querySelector('style[data-zelvior="' + STYLE_ID + '"]')) {
+            var style = doc.createElement('style');
+            style.setAttribute('data-zelvior', STYLE_ID);
+            style.textContent = CSS;
+            doc.head.appendChild(style);
+          }
+          stripInlineStyles(doc);
+          stripSvgFilters(doc);
+        });
+        Observer.on('mutation', onMutation);
+        active = true;
+        emit('lite:enable', {});
+        return true;
+      },
+      disable: function () {
+        safe0(function () {
+          var s = doc.querySelector('style[data-zelvior="' + STYLE_ID + '"]');
+          if (s && s.parentNode) s.parentNode.removeChild(s);
+        });
+        Observer.off('mutation', onMutation);
+        active = false;
+        emit('lite:disable', {});
+      }
+    };
+  })();
+
 
   var Adaptive = (function () {
     var LEVELS = [
@@ -572,6 +674,7 @@
     safe0(function () { Metrics.start(); });
     if (opts.adaptive !== false) safe0(function () { Adaptive.start(); });
     if (opts.enhance !== false) safe0(applyEnhancements);
+    if (opts.lite === true) safe0(function () { Lite.enable(); });
     emit('enable', { profile: Optimizer.profile });
     return Z;
   };
@@ -590,6 +693,11 @@
 
   Z.scheduler = Scheduler; Z.observer = Observer; Z.optimizer = Optimizer; Z.recycler = Recycler;
   Z.memory = Memory; Z.metrics = Metrics; Z.plugins = Plugins; Z.adaptive = Adaptive; Z.features = has;
+  // Visual-simplification mode: strips shadows/glassmorphism/glows/custom
+  // scrollbars for maximum paint/composite performance. Default OFF --
+  // this is an opt-in trade of visual polish for raw performance, not
+  // something that should silently change how a site looks.
+  Z.lite = { enable: function () { return Lite.enable(); }, disable: function () { return Lite.disable(); }, isActive: function () { return Lite.isActive(); } };
   Z.isEnabled = function () { return enabled; };
 
 export { Scheduler, Observer, Optimizer, Adaptive, Recycler, Memory, Metrics, Plugins };

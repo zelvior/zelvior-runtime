@@ -1,6 +1,6 @@
 {
   "name": "zelvior-runtime",
-  "version": "0.7.0",
+  "version": "0.9.1",
   "description": "Dependency-free, adaptive browser runtime for lazy loading, scheduling, and self-tuning performance based on live device/browser conditions.",
   "license": "MIT",
   "author": "Zelvior",
@@ -105,6 +105,100 @@
       "import": "./dist/net.esm.min.js",
       "require": "./dist/net.min.cjs",
       "default": "./dist/net.esm.min.js"
+    },
+    "./storage": {
+      "types": "./dist/storage.d.ts",
+      "import": "./dist/storage.esm.js",
+      "require": "./dist/storage.cjs",
+      "default": "./dist/storage.esm.js"
+    },
+    "./storage/min": {
+      "types": "./dist/storage.d.ts",
+      "import": "./dist/storage.esm.min.js",
+      "require": "./dist/storage.min.cjs",
+      "default": "./dist/storage.esm.min.js"
+    },
+        "./tier": {
+      "types": "./dist/tier.d.ts",
+      "import": "./dist/tier.esm.js",
+      "require": "./dist/tier.cjs",
+      "default": "./dist/tier.esm.js"
+    },
+    "./tier/min": {
+      "types": "./dist/tier.d.ts",
+      "import": "./dist/tier.esm.min.js",
+      "require": "./dist/tier.min.cjs",
+      "default": "./dist/tier.esm.min.js"
+    },
+    "./raf": {
+      "types": "./dist/raf.d.ts",
+      "import": "./dist/raf.esm.js",
+      "require": "./dist/raf.cjs",
+      "default": "./dist/raf.esm.js"
+    },
+    "./raf/min": {
+      "types": "./dist/raf.d.ts",
+      "import": "./dist/raf.esm.min.js",
+      "require": "./dist/raf.min.cjs",
+      "default": "./dist/raf.esm.min.js"
+    },
+    "./idle": {
+      "types": "./dist/idle.d.ts",
+      "import": "./dist/idle.esm.js",
+      "require": "./dist/idle.cjs",
+      "default": "./dist/idle.esm.js"
+    },
+    "./idle/min": {
+      "types": "./dist/idle.d.ts",
+      "import": "./dist/idle.esm.min.js",
+      "require": "./dist/idle.min.cjs",
+      "default": "./dist/idle.esm.min.js"
+    },
+    "./resize": {
+      "types": "./dist/resize.d.ts",
+      "import": "./dist/resize.esm.js",
+      "require": "./dist/resize.cjs",
+      "default": "./dist/resize.esm.js"
+    },
+    "./resize/min": {
+      "types": "./dist/resize.d.ts",
+      "import": "./dist/resize.esm.min.js",
+      "require": "./dist/resize.min.cjs",
+      "default": "./dist/resize.esm.min.js"
+    },
+    "./intersect": {
+      "types": "./dist/intersect.d.ts",
+      "import": "./dist/intersect.esm.js",
+      "require": "./dist/intersect.cjs",
+      "default": "./dist/intersect.esm.js"
+    },
+    "./intersect/min": {
+      "types": "./dist/intersect.d.ts",
+      "import": "./dist/intersect.esm.min.js",
+      "require": "./dist/intersect.min.cjs",
+      "default": "./dist/intersect.esm.min.js"
+    },
+    "./paint": {
+      "types": "./dist/paint.d.ts",
+      "import": "./dist/paint.esm.js",
+      "require": "./dist/paint.cjs",
+      "default": "./dist/paint.esm.js"
+    },
+    "./paint/min": {
+      "types": "./dist/paint.d.ts",
+      "import": "./dist/paint.esm.min.js",
+      "require": "./dist/paint.min.cjs",
+      "default": "./dist/paint.esm.min.js"
+    },
+    "./legacy": {
+      "types": "./dist/zelvior.d.ts",
+      "browser": "./dist/zelvior.legacy.js",
+      "default": "./dist/zelvior.legacy.js"
+    },
+    "./legacy/min": {
+      "types": "./dist/zelvior.d.ts",
+      "browser": "./dist/zelvior.legacy.min.js",
+      "default": "./dist/zelvior.legacy.min.js"
     },
     "./package.json": "./package.json"
   },

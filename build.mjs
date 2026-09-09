@@ -37,7 +37,7 @@ async function main() {
 
   mkdirSync('dist', { recursive: true });
   copyFileSync('src/zelvior.d.ts', 'dist/zelvior.d.ts');
-  for (const name of ['events', 'dom', 'scroll', 'virtual', 'net']) {
+  for (const name of ['events', 'dom', 'scroll', 'virtual', 'net', 'storage', 'tier', 'raf', 'idle', 'resize', 'intersect', 'paint']) {
     copyFileSync(`src/modules/${name}.d.ts`, `dist/${name}.d.ts`);
   }
 
@@ -56,6 +56,13 @@ async function main() {
     { format: 'cjs', outfile: 'dist/zelvior.min.cjs', minify: true },
     { format: 'iife', outfile: 'dist/zelvior.js', minify: false, globalName: 'Zelvior', footer: iifeFooter },
     { format: 'iife', outfile: 'dist/zelvior.min.js', minify: true, globalName: 'Zelvior', footer: iifeFooter },
+    // Legacy target: es5, for environments without native ES2017 support
+    // (old WebKit/old Firefox on XP-era or first-gen Chromebook hardware).
+    // esbuild transpiles down to es5 syntax; the runtime's own feature
+    // detection (has.raf/has.ric/etc.) still governs which browser APIs
+    // are actually used at runtime, this only affects *syntax* support.
+    { format: 'iife', outfile: 'dist/zelvior.legacy.js', minify: false, globalName: 'Zelvior', footer: iifeFooter, target: 'es5' },
+    { format: 'iife', outfile: 'dist/zelvior.legacy.min.js', minify: true, globalName: 'Zelvior', footer: iifeFooter, target: 'es5' },
   ];
 
   // Standalone, tree-shakeable submodules (src/modules/*.js). Each is fully
@@ -66,7 +73,7 @@ async function main() {
   // or the core runtime). ESM + CJS only: these are for bundler/import
   // consumers who want tree-shaking; script-tag/CDN users already have the
   // full Zelvior global from the targets above.
-  const moduleNames = ['events', 'dom', 'scroll', 'virtual', 'net'];
+  const moduleNames = ['events', 'dom', 'scroll', 'virtual', 'net', 'storage', 'tier', 'raf', 'idle', 'resize', 'intersect', 'paint'];
   for (const name of moduleNames) {
     const modEntry = `src/modules/${name}.js`;
     targets.push(
@@ -88,7 +95,7 @@ async function main() {
       globalName: t.globalName,
       banner,
       footer: t.footer,
-      target: ['es2017'],
+      target: [t.target || 'es2017'],
       legalComments: 'none',
     });
   }

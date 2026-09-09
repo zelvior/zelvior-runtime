@@ -1,0 +1,270 @@
+// Zelvior Runtime — MIT — https://github.com/zelvior/zelvior-runtime
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
+};
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
+};
+var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+
+// src/modules/storage.js
+var storage_exports = {};
+__export(storage_exports, {
+  capabilities: () => capabilities,
+  createStore: () => createStore,
+  defaultStore: () => defaultStore
+});
+module.exports = __toCommonJS(storage_exports);
+var DB_NAME = "zelvior-store";
+var STORE = "kv";
+var hasIDB = typeof indexedDB !== "undefined";
+var hasLS = function() {
+  try {
+    var k = "__zelvior_ls_test__";
+    localStorage.setItem(k, "1");
+    localStorage.removeItem(k);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}();
+var dbPromise = null;
+function openDb(dbName) {
+  if (dbPromise) return dbPromise;
+  dbPromise = new Promise(function(resolve, reject) {
+    var req = indexedDB.open(dbName || DB_NAME, 1);
+    req.onupgradeneeded = function() {
+      if (!req.result.objectStoreNames.contains(STORE)) req.result.createObjectStore(STORE);
+    };
+    req.onsuccess = function() {
+      resolve(req.result);
+    };
+    req.onerror = function() {
+      reject(req.error);
+    };
+  });
+  return dbPromise;
+}
+function idbGet(key, dbName) {
+  return openDb(dbName).then(function(db) {
+    return new Promise(function(resolve, reject) {
+      var tx = db.transaction(STORE, "readonly").objectStore(STORE).get(key);
+      tx.onsuccess = function() {
+        resolve(tx.result);
+      };
+      tx.onerror = function() {
+        reject(tx.error);
+      };
+    });
+  });
+}
+function idbSet(key, value, dbName) {
+  return openDb(dbName).then(function(db) {
+    return new Promise(function(resolve, reject) {
+      var tx = db.transaction(STORE, "readwrite").objectStore(STORE).put(value, key);
+      tx.onsuccess = function() {
+        resolve();
+      };
+      tx.onerror = function() {
+        reject(tx.error);
+      };
+    });
+  });
+}
+function idbDel(key, dbName) {
+  return openDb(dbName).then(function(db) {
+    return new Promise(function(resolve, reject) {
+      var tx = db.transaction(STORE, "readwrite").objectStore(STORE).delete(key);
+      tx.onsuccess = function() {
+        resolve();
+      };
+      tx.onerror = function() {
+        reject(tx.error);
+      };
+    });
+  });
+}
+function idbClear(dbName) {
+  return openDb(dbName).then(function(db) {
+    return new Promise(function(resolve, reject) {
+      var tx = db.transaction(STORE, "readwrite").objectStore(STORE).clear();
+      tx.onsuccess = function() {
+        resolve();
+      };
+      tx.onerror = function() {
+        reject(tx.error);
+      };
+    });
+  });
+}
+function idbKeys(dbName) {
+  return openDb(dbName).then(function(db) {
+    return new Promise(function(resolve, reject) {
+      var out = [];
+      var req = db.transaction(STORE, "readonly").objectStore(STORE).openKeyCursor ? db.transaction(STORE, "readonly").objectStore(STORE).openKeyCursor() : db.transaction(STORE, "readonly").objectStore(STORE).openCursor();
+      req.onsuccess = function(e) {
+        var cursor = e.target.result;
+        if (cursor) {
+          out.push(cursor.key);
+          cursor.continue();
+        } else resolve(out);
+      };
+      req.onerror = function() {
+        reject(req.error);
+      };
+    });
+  });
+}
+function lsKey(prefix, key) {
+  return prefix + key;
+}
+function createStore(opts) {
+  opts = opts || {};
+  var dbName = opts.name || DB_NAME;
+  var prefix = "zelvior:" + dbName + ":";
+  var mode = opts.mode || "auto";
+  var backend = mode === "local" ? "local" : hasIDB ? "idb" : mode === "idb" ? null : "local";
+  if (backend === null) {
+    return {
+      backend: "none",
+      get: function() {
+        return Promise.reject(new Error('zelvior/storage: IndexedDB unavailable and mode="idb" forbids fallback'));
+      },
+      set: function() {
+        return Promise.reject(new Error('zelvior/storage: IndexedDB unavailable and mode="idb" forbids fallback'));
+      },
+      del: function() {
+        return Promise.reject(new Error('zelvior/storage: IndexedDB unavailable and mode="idb" forbids fallback'));
+      },
+      clear: function() {
+        return Promise.reject(new Error('zelvior/storage: IndexedDB unavailable and mode="idb" forbids fallback'));
+      },
+      keys: function() {
+        return Promise.reject(new Error('zelvior/storage: IndexedDB unavailable and mode="idb" forbids fallback'));
+      }
+    };
+  }
+  if (backend === "local") {
+    if (!hasLS) {
+      return {
+        backend: "none",
+        get: function() {
+          return Promise.resolve(void 0);
+        },
+        set: function() {
+          return Promise.resolve();
+        },
+        del: function() {
+          return Promise.resolve();
+        },
+        clear: function() {
+          return Promise.resolve();
+        },
+        keys: function() {
+          return Promise.resolve([]);
+        }
+      };
+    }
+    return {
+      backend: "local",
+      get: function(key) {
+        try {
+          var raw = localStorage.getItem(lsKey(prefix, key));
+          return Promise.resolve(raw == null ? void 0 : JSON.parse(raw));
+        } catch (e) {
+          return Promise.reject(e);
+        }
+      },
+      set: function(key, value) {
+        try {
+          localStorage.setItem(lsKey(prefix, key), JSON.stringify(value));
+          return Promise.resolve();
+        } catch (e) {
+          return Promise.reject(e);
+        }
+      },
+      del: function(key) {
+        try {
+          localStorage.removeItem(lsKey(prefix, key));
+          return Promise.resolve();
+        } catch (e) {
+          return Promise.reject(e);
+        }
+      },
+      clear: function() {
+        try {
+          for (var i = localStorage.length - 1; i >= 0; i--) {
+            var k = localStorage.key(i);
+            if (k && k.indexOf(prefix) === 0) localStorage.removeItem(k);
+          }
+          return Promise.resolve();
+        } catch (e) {
+          return Promise.reject(e);
+        }
+      },
+      keys: function() {
+        try {
+          var out = [];
+          for (var i = 0; i < localStorage.length; i++) {
+            var k = localStorage.key(i);
+            if (k && k.indexOf(prefix) === 0) out.push(k.slice(prefix.length));
+          }
+          return Promise.resolve(out);
+        } catch (e) {
+          return Promise.reject(e);
+        }
+      }
+    };
+  }
+  var lsFallback = mode === "auto" ? createStore({ name: dbName, mode: "local" }) : null;
+  function withFallback(promise, fallbackFn) {
+    if (!lsFallback) return promise;
+    return promise.catch(function() {
+      return fallbackFn();
+    });
+  }
+  return {
+    backend: "idb",
+    get: function(key) {
+      return withFallback(idbGet(key, dbName), function() {
+        return lsFallback.get(key);
+      });
+    },
+    set: function(key, value) {
+      return withFallback(idbSet(key, value, dbName), function() {
+        return lsFallback.set(key, value);
+      });
+    },
+    del: function(key) {
+      return withFallback(idbDel(key, dbName), function() {
+        return lsFallback.del(key);
+      });
+    },
+    clear: function() {
+      return withFallback(idbClear(dbName), function() {
+        return lsFallback.clear();
+      });
+    },
+    keys: function() {
+      return withFallback(idbKeys(dbName), function() {
+        return lsFallback.keys();
+      });
+    }
+  };
+}
+var _default = null;
+function defaultStore() {
+  if (!_default) _default = createStore({ name: DB_NAME, mode: "auto" });
+  return _default;
+}
+var capabilities = { indexedDB: hasIDB, localStorage: hasLS };
