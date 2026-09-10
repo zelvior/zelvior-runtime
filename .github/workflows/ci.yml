@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Node ${{ matrix.node }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 18/20 cover engines.node's floor + current LTS; 22 is current.
+        # test:coverage (--experimental-test-coverage) needs Node 20+, so
+        # it only runs on the newer two -- lint/build/test run on all three.
+        node: [18, 20, 22]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Format check (files with an enforced style)
+        run: npm run format:check
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test
+
+      - name: Test with coverage
+        if: matrix.node != 18
+        run: npm run test:coverage
+
+      - name: Benchmark (informational, not a pass/fail gate)
+        run: npm run bench

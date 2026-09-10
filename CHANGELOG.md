@@ -1,5 +1,36 @@
 # Changelog
 
+## v0.11.0
+
+### Added
+- **`zelvior-runtime/security`** — new zero-coupling module for client-side hardening of pages/apps embedding this runtime:
+  - `sanitizeHTML(html)` — allowlist-based HTML sanitizer (parses in a detached document via `DOMParser`, never the live page). Strips everything outside a small formatting-tag allowlist and all attributes except an explicit safe subset; preserves text content of removed elements rather than dropping it silently.
+  - `isSafeURL(url)` — rejects `javascript:`/`vbscript:`/`data:text/html`/`data:application` URIs, including ones obfuscated with embedded control characters (`"java\tscript:"`), the guard that belongs in front of any `href`/`src`/`action` assignment sourced from untrusted input.
+  - `isFramed()` / `preventClickjacking(opts)` — same-origin-aware framing detection and an opt-in break-out for pages that can't set `X-Frame-Options`/`frame-ancestors` server-side (e.g. static hosting).
+  - `freezePrototypes()` — freezes `Object`/`Array`/`Function`/`String.prototype` to blunt `JSON.parse`-plus-merge prototype-pollution gadget chains. Documented trade-off: breaks any code that legitimately extends a built-in prototype after this runs.
+  - `generateCSRFToken(key)` / `verifyCSRFToken(token, key)` — real CSPRNG-backed (`crypto.getRandomValues`) tokens for same-origin form submissions without a server-side session framework.
+  - Everything in this module is documented with an explicit scope note: none of it replaces server-side validation, a real CSP header, or a security review — it covers a narrow, real slice of client-side risk.
+- **`storage.createEncryptedStore(store, passphrase)`** — wraps any existing `zelvior-runtime/storage` store with real AES-GCM encryption (PBKDF2-derived key, fresh random salt+IV per value, via Web Crypto — not a hand-rolled cipher). Throws synchronously without Web Crypto or an empty passphrase, rather than silently falling back to plaintext.
+- **`test/security.test.mjs`** (10 tests) and **`test/storage.test.mjs`** (7 tests) — real tests against the built dist output, not just the new module: found and fixed 2 real test-harness bugs along the way (a `btoa` self-recursion issue from shadowing Node's native global with jsdom's wrapper, and a module-load-order bug where `storage.js`'s one-time `localStorage`/`indexedDB` feature detection ran before the test harness had installed jsdom's globals).
+
+### Fixed
+- `no-control-regex` ESLint finding in `isSafeURL`'s control-character stripping — legitimate, not a bug, but needed a scoped `eslint-disable` with the reasoning documented rather than a blanket rule suppression.
+
+## v0.10.1
+
+### Added
+- **CI/quality tooling: ESLint (`eslint.config.js`), Prettier (`.prettierrc.json`), Node's built-in coverage reporter, and Playwright e2e (`e2e/`, `playwright.config.js`).** All were actually run against this codebase, not just scaffolded:
+  - ESLint found and fixed 2 real `no-prototype-builtins` bugs (`cfg.hasOwnProperty(k)` in `Adaptive.setConfig`, `opts.hasOwnProperty(k)` in `zelvior-runtime/net`) — both switched to `Object.prototype.hasOwnProperty.call(obj, k)`.
+  - Coverage measured at 97.81% line / 86.44% branch / 96.88% function on the `.cjs` module builds — documented honestly that this doesn't cover `zelvior.js` itself, since the core test files `eval()` it as a string, which Node's coverage instrumentation can't instrument.
+  - Playwright e2e (`e2e/lite.spec.js`) asserts `Z.lite.enable()` actually zeroes `getComputedStyle()` results in a real Chromium — written and reviewed but **not executed locally** (this environment's network egress blocks the Chromium binary download); runs for real in CI.
+  - Prettier deliberately **not** mass-applied to the existing dense-style `src/` files — `format:check` is scoped to newly-added files only, to avoid a large, low-value reformatting diff. See README's Testing section for the full reasoning.
+- **`.github/workflows/ci.yml`** — Node 18/20/22 matrix running lint, format check, build, test, coverage (Node 20+), and bench.
+- **`.github/workflows/e2e.yml`** — separate job for the Playwright suite (isolated so a slow/flaky browser-binary download doesn't block the fast unit-test loop).
+- **`SECURITY.md`** — vulnerability reporting process and realistic scope for a zero-runtime-dependency package.
+
+### Changed
+- **Version numbering unified with the browser extension.** Both are kept at the same version number from v0.10.0 onward.
+
 ## v0.10.0
 
 ### Fixed

@@ -41,7 +41,7 @@ function dedupeFetch(url, opts) {
   }
   var fetchOpts = {};
   for (var k in opts) {
-    if (opts.hasOwnProperty(k) && k !== "ttl" && k !== "dedupeKey") fetchOpts[k] = opts[k];
+    if (Object.prototype.hasOwnProperty.call(opts, k) && k !== "ttl" && k !== "dedupeKey") fetchOpts[k] = opts[k];
   }
   var promise = fetch(url, fetchOpts).then(
     function(response) {

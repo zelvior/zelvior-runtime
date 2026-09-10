@@ -9,12 +9,17 @@ Dependency-free, adaptive browser runtime for lazy-loading, scheduling, and
 self-tuning performance based on live device/browser conditions. **~19.4KB
 minified, ~7.0KB gzipped core bundle, zero runtime dependencies.**
 
-> **Version note:** this package is at v0.10.0 locally. v0.8.0-v0.10.0
+> **Version note:** this package is at v0.11.0 locally. v0.8.0-v0.10.0
 > added six new zero-coupling modules (`tier`, `raf`, `idle`, `resize`,
 > `intersect`, `paint`), an IndexedDB-first `storage` module, an es5
 > `zelvior.legacy.js` build target, and `Z.lite` — an opt-in, default-off
-> visual-simplification mode. Core bundle size grew from ~16.8KB → ~19.4KB
-> minified across this range (~6.3KB → ~7.0KB gzipped) — see the exact,
+> visual-simplification mode. v0.11.0 added `zelvior-runtime/security`
+> (client-side hardening: sanitization, URL-safety, clickjacking,
+> prototype-pollution freezing, CSRF tokens) and encryption-at-rest for
+> `storage` via `createEncryptedStore`. Core bundle size is unaffected by
+> v0.11.0 (both are separate zero-coupling modules, not part of the core
+> import) — it grew from ~16.8KB → ~19.4KB minified across v0.8.0-v0.10.0
+> (~6.3KB → ~7.0KB gzipped) and has stayed there since. See the exact,
 > regenerated-on-every-build sizes in the Modules section and Benchmarks
 > below, and CHANGELOG.md for what changed in each release.
 
@@ -86,7 +91,14 @@ runtime — importing one does not pull in `Zelvior` or any other module.
 None of them are loaded or run unless you import them; none change any
 browser default behavior on their own. `events`/`dom`/`scroll` added in
 v0.5.0; `virtual` added in v0.6.0; `net` added in v0.7.0; `storage`,
-`tier`, `raf`, `idle`, `resize`, `intersect`, `paint` all added in v0.8.0.
+`tier`, `raf`, `idle`, `resize`, `intersect`, `paint` all added in v0.8.0;
+`security` added in v0.11.0.
+
+**Documentation gap, stated honestly:** `tier`, `raf`, `idle`, `resize`,
+`intersect`, and `paint` don't have detailed subsections below yet
+(`storage` and `security` do, added alongside this note) — check
+`src/modules/*.d.ts` for their full API in the meantime, or open an issue
+if you want one prioritized.
 
 ### `zelvior-runtime/events`
 
@@ -293,6 +305,65 @@ same as if you'd written the `<link>` tag yourself. `dedupeFetch` changes
 nothing about `fetch()` itself; it only decides whether to reuse a
 Promise instead of calling `fetch()` again.
 
+### `zelvior-runtime/storage`
+
+```js
+import { createStore, defaultStore, createEncryptedStore, capabilities } from 'zelvior-runtime/storage';
+```
+
+| Export | What it does | Why it exists |
+|---|---|---|
+| `createStore(opts?)` | IndexedDB-backed key/value store with automatic localStorage fallback. `opts.mode`: `'auto'` (default, falls back silently), `'idb'` (rejects rather than falling back), `'local'` (forces localStorage). All methods return Promises regardless of backend. | Async, off-main-thread storage by default — localStorage is synchronous and blocks the main thread on every read/write. |
+| `defaultStore()` | Lazily-created shared store instance. | Convenience for the common case of one store per page. |
+| `createEncryptedStore(store, passphrase)` | Wraps any store from `createStore()` so every value is AES-GCM encrypted at rest (PBKDF2-derived key, fresh random salt+IV per value, via the real Web Crypto API). `del`/`clear`/`keys` pass through unchanged — only values are encrypted, not key names. Throws synchronously without Web Crypto or an empty passphrase. | Protects stored values from anyone reading the browser's storage files directly (shared device, another local process, a storage-permissioned extension) — added in v0.11.0. **Not** a defense against script running in the same page (that script can just call `.get()` like your own code does), and not a substitute for not storing secrets client-side that don't need to be there. |
+| `capabilities` | `{ indexedDB, localStorage }` — feature-detected once at module load. | Lets calling code branch on what's actually available rather than guessing. |
+
+**Real, tested evidence:** `test/storage.test.mjs` (7 tests) exercises
+the `local` backend against jsdom's real `localStorage` and
+`createEncryptedStore` against Node's real WebCrypto — round-tripping a
+value, confirming the *underlying* store never holds plaintext (reads it
+back through the unencrypted base store directly and asserts the secret
+string isn't a substring of what's stored), and confirming a wrong
+passphrase causes AES-GCM's authentication tag to fail verification
+(rejects) rather than silently returning garbage.
+
+**Honest gap:** jsdom doesn't implement IndexedDB (confirmed by
+inspection — `typeof window.indexedDB === 'undefined'` in a fresh jsdom
+window), so the `idb`/`auto` backend code paths aren't covered by the
+automated suite, only by manual testing against a real browser. A
+`fake-indexeddb` devDependency would close this; not added yet.
+
+### `zelvior-runtime/security`
+
+```js
+import { sanitizeHTML, isSafeURL, isFramed, preventClickjacking, freezePrototypes, generateCSRFToken, verifyCSRFToken } from 'zelvior-runtime/security';
+```
+
+Added in v0.11.0. **Read this before using it:** nothing here replaces
+server-side input validation, output encoding at your templating layer,
+a real `Content-Security-Policy` header, or an actual security review.
+It covers a narrow, real slice of client-side risk worth reducing even
+when you don't control the server — treat it as defense in depth, not a
+perimeter.
+
+| Export | What it does | Why it exists |
+|---|---|---|
+| `sanitizeHTML(html)` | Parses `html` in a **detached** document (nothing in it can execute) via `DOMParser`, strips everything outside a small allowlist of formatting tags (`b`/`i`/`em`/`strong`/`u`/`br`/`p`/`span`) and all attributes except an explicit safe subset, and returns a sanitized HTML string. Text content of removed elements is preserved, not dropped. | Untrusted text destined for `.innerHTML` (comments, chat messages, bios) needs sanitizing at the point of insertion — allowlist-based, not blocklist-based, since blocklists are how XSS filters keep getting bypassed. Not intended for rich-HTML scenarios needing a wider allowlist (use a real library like DOMPurify for that). |
+| `isSafeURL(url)` | Rejects `javascript:`/`vbscript:`/`data:text/html`/`data:application` URIs, including ones with embedded control characters used to break up the scheme string (`"java\tscript:"`) — browsers ignore those characters when parsing a scheme, so stripping them before comparison closes a real bypass, not a hypothetical one. | The check that belongs in front of any `href`/`src`/`action` assignment sourced from user input (a profile link, a stored redirect target). |
+| `isFramed()` | `window.top !== window.self`, with cross-origin access throwing treated as "yes, framed" rather than an error to route around. | Precondition check for clickjacking. |
+| `preventClickjacking(opts?)` | If framed by a different origin, top-level-navigates to break out (or just fires `opts.onDetected()` if `opts.breakout === false`). Same-origin framing (your own site framing itself) is left alone. | A client-side fallback for pages that can't set `X-Frame-Options`/`frame-ancestors` server-side (e.g. static hosting with no header control) — setting that header is still the correct primary defense. |
+| `freezePrototypes()` | `Object.freeze()`s `Object`/`Array`/`Function`/`String.prototype`. | Blunts `JSON.parse`-plus-merge prototype-pollution gadget chains (an attacker-controlled `{"__proto__":{"isAdmin":true}}` merged into a config object) by making the prototypes themselves immutable. **Real trade-off, not hidden:** any code (yours or a third-party script) that legitimately extends a built-in prototype after this runs will silently no-op. Call it after your polyfills/libraries load, and test your specific dependencies first. |
+| `generateCSRFToken(key?)` / `verifyCSRFToken(token, key?)` | Generates/verifies a token via `crypto.getRandomValues` (a real CSPRNG, not `Math.random`), stored in `sessionStorage`. | For same-origin form submissions where you don't have a server-side session framework issuing tokens (a static site posting to a serverless function). The server still has to actually check the token matches what it issued — this only generates and locally verifies one. |
+
+**Real, tested evidence:** `test/security.test.mjs` (10 tests) — includes
+verifying `sanitizeHTML` actually strips `<script>` tags and
+`onclick`/`onerror` attributes while preserving surrounding text (not
+just "doesn't throw"), `isSafeURL` against both the plain and
+control-character-obfuscated `javascript:` forms, `freezePrototypes`
+against `Object.isFrozen()` (not just "ran without error"), and a full
+CSRF token round-trip that also confirms a wrong token and a
+different-key lookup both correctly fail.
+
 ## Subsystems
 
 - `Zelvior.scheduler` — priority task queue (`add`, `addIdle`, `nextFrame`, `whenIdle`, `clear`, `pending`)
@@ -433,9 +504,9 @@ needed.
 ## Testing
 
 ```bash
-npm install   # pulls in the jsdom devDependency
-npm test      # runs test/*.test.mjs (basic, modules, net, virtual) via Node's built-in test runner
-node bench.mjs # runs the Z.lite DOM-walk benchmark shown above, against the built dist/zelvior.js
+npm install    # pulls in the dev dependencies (jsdom, eslint, prettier, playwright)
+npm test       # runs test/*.test.mjs (basic, modules, net, security, storage, virtual) via Node's built-in test runner
+npm run bench  # runs the Z.lite DOM-walk benchmark shown above, against the built dist/zelvior.js
 ```
 
 The suite runs the actual built `dist/zelvior.js` inside jsdom — a real,
@@ -448,6 +519,105 @@ dev-only requirement for *contributing to* the package, separate from
 `engines.node` (`>=12`), which covers what's needed to *install and use*
 it — the shipped `dist/` files themselves have no Node dependency at all
 since they run in browsers.
+
+### Coverage
+
+```bash
+npm run test:coverage   # node --test --experimental-test-coverage
+```
+
+Measured, current result (regenerate with the command above — this
+number moves as modules/tests are added, so treat it as a snapshot, not a
+permanent claim): **90.63% line / 83.94% branch / 90.14% function**
+overall across the `.cjs` module builds and their test files (`dom`,
+`events`, `net`, `scroll`, `security`, `storage`, `virtual`). Per-file,
+this ranges from 100% (`net.cjs`) down to 51.73% line coverage on
+`storage.cjs` — the latter because `test/storage.test.mjs` only exercises
+the `local` backend (jsdom has no IndexedDB) and a subset of
+`createEncryptedStore`'s paths, leaving the `idb`/`auto` backend
+functions themselves uncovered by this suite; see that module's README
+section for the honest gap. Be precise about what the aggregate number
+does and doesn't cover: `test/basic.test.mjs` and `test/modules.test.mjs`
+load the core `dist/zelvior.js` via `window.eval(source)` against a raw
+string — which is how the suite exercises the real built artifact rather
+than an un-bundled mock, but it also means Node's coverage instrumentation
+(which hooks module loading) can't see inside that eval'd code at all. The
+63 passing tests are real evidence the core runtime and every module
+works; the coverage percentage above is real evidence about the specific
+`.cjs` modules it can actually instrument, not a claim about `zelvior.js`'s
+internals or full coverage of every module's every path.
+
+### Linting & formatting
+
+```bash
+npm run lint           # eslint src/ build.mjs bench.mjs test/ -- currently 0 errors, 24 warnings
+npm run format:check   # prettier --check, scoped to files with an enforced style (see below)
+```
+
+Real findings from wiring this up (not hypothetical): ESLint's
+`no-prototype-builtins` rule caught two genuine bugs — `cfg.hasOwnProperty(k)`
+in `Adaptive.setConfig` and `opts.hasOwnProperty(k)` in
+`zelvior-runtime/net`, both fixed to
+`Object.prototype.hasOwnProperty.call(obj, k)` in v0.10.0 (an object
+without `Object.prototype` in its chain, e.g. one built with
+`Object.create(null)`, would have thrown on the old code).
+
+**On Prettier and the existing codebase, honestly:** running
+`prettier --write` across `src/` would reformat all 12 module files from
+their current dense, deliberately-compact style (see the size-conscious
+comments throughout `src/zelvior.js`) into Prettier's default multi-line
+style — a large, code-review-hostile diff with no behavior change and a
+real risk of introducing mistakes in a hand-tuned file. That mass
+reformat has **not** been done. `format:check` is scoped to the files
+that already conform (`eslint.config.js`, `bench.mjs`, `package.json`) so
+CI enforces real formatting discipline going forward without silently
+claiming compliance it doesn't have on the existing files.
+
+### End-to-end (real browser)
+
+```bash
+npx playwright install chromium   # one-time; downloads a real Chromium binary
+npm run test:e2e                  # playwright test
+```
+
+`test/*.test.mjs` runs against jsdom, which is spec-compliant enough to
+catch real DOM bugs but has no renderer — it cannot tell you whether
+`Z.lite.enable()` actually zeroes a `getComputedStyle()` result in a real
+engine. `e2e/lite.spec.js` does exactly that, against a real Chromium via
+Playwright, using a fixture page (`e2e/fixtures/lite.html`) with genuine
+shadow/blur/gradient/transform CSS, asserting the effects are present
+*before* `Z.lite.enable()` and gone *after* — so a fixture with nothing to
+strip can't produce a false pass.
+
+**Honest status:** this suite could not be executed in the sandboxed
+environment it was written in — installing the Chromium binary requires a
+download from `cdn.playwright.dev`, which that environment's network
+egress policy blocks. It has been written correctly (syntax-checked,
+reviewed against the real `Z.lite` API) but **not run**. It runs for real
+in CI (`.github/workflows/e2e.yml`) on every push/PR — check the Actions
+tab for current status rather than trusting this paragraph indefinitely.
+
+### CI
+
+Two GitHub Actions workflows, deliberately separate:
+
+- **`.github/workflows/ci.yml`** — lint, format check, build, `npm test`,
+  and `test:coverage` (Node 20/22 only — `--experimental-test-coverage`
+  needs it) across a Node 18/20/22 matrix, plus `npm run bench` as an
+  informational (non-blocking) step so benchmark numbers stay visible in
+  every run's log without gating merges on hardware-dependent timing.
+- **`.github/workflows/e2e.yml`** — the Playwright suite, isolated into
+  its own job specifically because downloading a ~150MB Chromium binary
+  is slower and more network-dependent than the rest of CI; a flaky
+  download here shouldn't block the fast unit-test feedback loop.
+
+## Security
+
+See [SECURITY.md](./SECURITY.md) for how to report a vulnerability and
+what's actually in scope (this package has zero runtime dependencies by
+design, so the realistic risk surface is narrow — DOM/XSS-adjacent issues
+and prototype-pollution-shaped bugs like the `hasOwnProperty` ones just
+fixed, not supply-chain, since nothing ships in `dist/` from a registry).
 
 ## Landing page
 

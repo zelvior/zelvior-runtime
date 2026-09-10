@@ -2,14 +2,14 @@
 
 | File | Bytes | Gzip Bytes |
 |---|---|---|
-| dist/zelvior.esm.js | 35720 | 9015 |
-| dist/zelvior.esm.min.js | 19164 | 6886 |
-| dist/zelvior.cjs | 36729 | 9370 |
-| dist/zelvior.min.cjs | 19629 | 7101 |
-| dist/zelvior.js | 39460 | 9548 |
-| dist/zelvior.min.js | 19905 | 7186 |
-| dist/zelvior.legacy.js | 40046 | 9650 |
-| dist/zelvior.legacy.min.js | 20140 | 7228 |
+| dist/zelvior.esm.js | 35743 | 9025 |
+| dist/zelvior.esm.min.js | 19186 | 6894 |
+| dist/zelvior.cjs | 36752 | 9375 |
+| dist/zelvior.min.cjs | 19651 | 7103 |
+| dist/zelvior.js | 39483 | 9551 |
+| dist/zelvior.min.js | 19927 | 7185 |
+| dist/zelvior.legacy.js | 40069 | 9654 |
+| dist/zelvior.legacy.min.js | 20162 | 7230 |
 | dist/events.esm.js | 2814 | 962 |
 | dist/events.esm.min.js | 1641 | 738 |
 | dist/events.cjs | 3789 | 1284 |
@@ -26,14 +26,14 @@
 | dist/virtual.esm.min.js | 3373 | 1498 |
 | dist/virtual.cjs | 7993 | 2488 |
 | dist/virtual.min.cjs | 3813 | 1704 |
-| dist/net.esm.js | 2878 | 1063 |
-| dist/net.esm.min.js | 1764 | 850 |
-| dist/net.cjs | 3857 | 1385 |
-| dist/net.min.cjs | 2206 | 1051 |
-| dist/storage.esm.js | 7261 | 1504 |
-| dist/storage.esm.min.js | 4234 | 1250 |
-| dist/storage.cjs | 8199 | 1831 |
-| dist/storage.min.cjs | 4674 | 1461 |
+| dist/net.esm.js | 2901 | 1078 |
+| dist/net.esm.min.js | 1786 | 865 |
+| dist/net.cjs | 3880 | 1388 |
+| dist/net.min.cjs | 2228 | 1056 |
+| dist/storage.esm.js | 9890 | 2205 |
+| dist/storage.esm.min.js | 5866 | 1835 |
+| dist/storage.cjs | 10856 | 2534 |
+| dist/storage.min.cjs | 6307 | 2050 |
 | dist/tier.esm.js | 1629 | 677 |
 | dist/tier.esm.min.js | 966 | 581 |
 | dist/tier.cjs | 2517 | 999 |
@@ -58,3 +58,7 @@
 | dist/paint.esm.min.js | 577 | 363 |
 | dist/paint.cjs | 1844 | 770 |
 | dist/paint.min.cjs | 1017 | 584 |
+| dist/security.esm.js | 3743 | 1458 |
+| dist/security.esm.min.js | 2416 | 1222 |
+| dist/security.cjs | 4777 | 1800 |
+| dist/security.min.cjs | 2860 | 1425 |

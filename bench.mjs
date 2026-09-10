@@ -46,13 +46,13 @@ function buildPage(document, n) {
       el.setAttribute(
         'style',
         'box-shadow:0 4px 12px rgba(0,0,0,.3);' +
-        'backdrop-filter:blur(10px);' +
-        '-webkit-backdrop-filter:blur(10px);' +
-        'background-image:linear-gradient(135deg,#fff,#eee);' +
-        'transform:translateZ(0) scale(1.02);' +
-        'border-radius:12px;' +
-        'transition:all .3s ease;' +
-        'will-change:transform;'
+          'backdrop-filter:blur(10px);' +
+          '-webkit-backdrop-filter:blur(10px);' +
+          'background-image:linear-gradient(135deg,#fff,#eee);' +
+          'transform:translateZ(0) scale(1.02);' +
+          'border-radius:12px;' +
+          'transition:all .3s ease;' +
+          'will-change:transform;'
       );
     } else {
       el.setAttribute('style', 'color:#333;padding:8px;');
@@ -94,7 +94,12 @@ function bench(n) {
 }
 
 console.log('=== Z.lite.enable() DOM-walk cost (jsdom, real dist/zelvior.js) ===\n');
-console.log('elements'.padEnd(10), 'time(ms)'.padEnd(10), 'inline-style bytes before -> after'.padEnd(38), 'removed');
+console.log(
+  'elements'.padEnd(10),
+  'time(ms)'.padEnd(10),
+  'inline-style bytes before -> after'.padEnd(38),
+  'removed'
+);
 for (const n of [100, 1000, 5000, 20000]) {
   const r = bench(n);
   console.log(
@@ -107,9 +112,16 @@ for (const n of [100, 1000, 5000, 20000]) {
 
 console.log('\n=== Bundle sizes (dist/, just built) ===\n');
 const files = [
-  'zelvior.min.js', 'zelvior.esm.min.js', 'zelvior.legacy.min.js',
-  'storage.esm.min.js', 'tier.esm.min.js', 'raf.esm.min.js',
-  'idle.esm.min.js', 'resize.esm.min.js', 'intersect.esm.min.js', 'paint.esm.min.js',
+  'zelvior.min.js',
+  'zelvior.esm.min.js',
+  'zelvior.legacy.min.js',
+  'storage.esm.min.js',
+  'tier.esm.min.js',
+  'raf.esm.min.js',
+  'idle.esm.min.js',
+  'resize.esm.min.js',
+  'intersect.esm.min.js',
+  'paint.esm.min.js',
 ];
 for (const f of files) {
   const p = path.join(distDir, f);
@@ -119,7 +131,9 @@ for (const f of files) {
   console.log(f.padEnd(24), `${min}B min`.padEnd(12), `${gz}B gzip`);
 }
 
-console.log('\nNote: this measures the JS-side DOM walk and payload removed, not\n' +
-  'actual browser paint/compositor/FPS improvement -- jsdom has no renderer.\n' +
-  'For real paint-time numbers, profile Z.lite before/after in Chrome DevTools\n' +
-  'Performance panel on a real glassmorphism-heavy page.');
+console.log(
+  '\nNote: this measures the JS-side DOM walk and payload removed, not\n' +
+    'actual browser paint/compositor/FPS improvement -- jsdom has no renderer.\n' +
+    'For real paint-time numbers, profile Z.lite before/after in Chrome DevTools\n' +
+    'Performance panel on a real glassmorphism-heavy page.'
+);

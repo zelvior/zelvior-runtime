@@ -1,7 +1,7 @@
 // Zelvior Runtime v0.3 — MIT
 // ESM source of truth; bundled to esm/cjs/iife by build.mjs
 
-  var Z = { version: '0.10.0' };
+  var Z = { version: '0.11.0' };
   var enabled = false;
   var doc = document, win = window, DE = doc.documentElement;
   var subs = {};
@@ -236,7 +236,7 @@
     return {
       profile: { reducedMotion: reducedMotion, saveData: saveData, effectiveType: effectiveType, slow: slow },
       config: config,
-      setConfig: function (cfg) { for (var k in cfg) if (cfg.hasOwnProperty(k)) config[k] = cfg[k]; emit('config', config); },
+      setConfig: function (cfg) { for (var k in cfg) if (Object.prototype.hasOwnProperty.call(cfg, k)) config[k] = cfg[k]; emit('config', config); },
       deferImages: function (root) {
         var imgs = byTag(root || doc, 'img');
         for (var i = 0; i < imgs.length; i++) safe1(deferImage, imgs[i]);

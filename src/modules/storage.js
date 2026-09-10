@@ -194,3 +194,98 @@ export function defaultStore() {
 }
 
 export var capabilities = { indexedDB: hasIDB, localStorage: hasLS };
+
+// --- Encryption at rest --------------------------------------------------
+// AES-GCM via the real Web Crypto API (not a hand-rolled cipher), keyed
+// by PBKDF2-derived material from a passphrase. This protects stored
+// values from anyone reading the browser's IndexedDB/localStorage files
+// directly (shared machine, another local process, a malicious browser
+// extension with storage access) -- it does NOT protect against an
+// attacker who can run JS in the same page (they can just call the
+// wrapped store's own `.get()`, same as your legitimate code would), and
+// it is NOT a substitute for not storing secrets you don't need to store
+// client-side at all. Real threat model: at-rest exposure on a shared
+// device, not in-page script isolation.
+var hasCrypto = typeof crypto !== 'undefined' && !!crypto.subtle;
+
+function deriveKey(passphrase, salt) {
+  var enc = new TextEncoder();
+  return crypto.subtle
+    .importKey('raw', enc.encode(passphrase), 'PBKDF2', false, ['deriveKey'])
+    .then(function (keyMaterial) {
+      return crypto.subtle.deriveKey(
+        { name: 'PBKDF2', salt: salt, iterations: 100000, hash: 'SHA-256' },
+        keyMaterial,
+        { name: 'AES-GCM', length: 256 },
+        false,
+        ['encrypt', 'decrypt']
+      );
+    });
+}
+
+function toB64(bytes) {
+  var bin = '';
+  for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
+}
+function fromB64(b64) {
+  var bin = atob(b64);
+  var bytes = new Uint8Array(bin.length);
+  for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+/**
+ * Wrap an existing store (from `createStore()`/`defaultStore()`) so every
+ * `.set()` transparently encrypts the value and every `.get()` decrypts
+ * it, using AES-GCM with a key derived from `passphrase` via PBKDF2 (a
+ * fresh random salt and IV per value, stored alongside the ciphertext --
+ * standard practice, not a shortcut). `del`/`clear`/`keys` pass through
+ * unchanged (key names themselves are not encrypted, only values).
+ *
+ * Requires Web Crypto (`crypto.subtle`); throws synchronously if
+ * unavailable rather than silently storing plaintext, since silently
+ * downgrading a security feature is worse than failing loudly.
+ */
+export function createEncryptedStore(store, passphrase) {
+  if (!hasCrypto) {
+    throw new Error('zelvior-runtime/storage: Web Crypto (crypto.subtle) unavailable, cannot create an encrypted store');
+  }
+  if (!passphrase || typeof passphrase !== 'string') {
+    throw new Error('zelvior-runtime/storage: createEncryptedStore requires a non-empty string passphrase');
+  }
+
+  function encrypt(value) {
+    var salt = crypto.getRandomValues(new Uint8Array(16));
+    var iv = crypto.getRandomValues(new Uint8Array(12));
+    return deriveKey(passphrase, salt).then(function (key) {
+      var enc = new TextEncoder();
+      var data = enc.encode(JSON.stringify(value));
+      return crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, key, data).then(function (cipherBuf) {
+        return { s: toB64(salt), iv: toB64(iv), c: toB64(new Uint8Array(cipherBuf)) };
+      });
+    });
+  }
+
+  function decrypt(envelope) {
+    if (!envelope || typeof envelope !== 'object' || !envelope.c) return Promise.resolve(undefined);
+    var salt = fromB64(envelope.s);
+    var iv = fromB64(envelope.iv);
+    var cipher = fromB64(envelope.c);
+    return deriveKey(passphrase, salt).then(function (key) {
+      return crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv }, key, cipher).then(function (plainBuf) {
+        var dec = new TextDecoder();
+        return JSON.parse(dec.decode(plainBuf));
+      });
+    });
+  }
+
+  return {
+    backend: store.backend,
+    get: function (key) { return store.get(key).then(decrypt); },
+    set: function (key, value) { return encrypt(value).then(function (envelope) { return store.set(key, envelope); }); },
+    del: function (key) { return store.del(key); },
+    clear: function () { return store.clear(); },
+    keys: function () { return store.keys(); },
+  };
+}

@@ -244,8 +244,84 @@ function defaultStore() {
   return _default;
 }
 var capabilities = { indexedDB: hasIDB, localStorage: hasLS };
+var hasCrypto = typeof crypto !== "undefined" && !!crypto.subtle;
+function deriveKey(passphrase, salt) {
+  var enc = new TextEncoder();
+  return crypto.subtle.importKey("raw", enc.encode(passphrase), "PBKDF2", false, ["deriveKey"]).then(function(keyMaterial) {
+    return crypto.subtle.deriveKey(
+      { name: "PBKDF2", salt, iterations: 1e5, hash: "SHA-256" },
+      keyMaterial,
+      { name: "AES-GCM", length: 256 },
+      false,
+      ["encrypt", "decrypt"]
+    );
+  });
+}
+function toB64(bytes) {
+  var bin = "";
+  for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
+}
+function fromB64(b64) {
+  var bin = atob(b64);
+  var bytes = new Uint8Array(bin.length);
+  for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+function createEncryptedStore(store, passphrase) {
+  if (!hasCrypto) {
+    throw new Error("zelvior-runtime/storage: Web Crypto (crypto.subtle) unavailable, cannot create an encrypted store");
+  }
+  if (!passphrase || typeof passphrase !== "string") {
+    throw new Error("zelvior-runtime/storage: createEncryptedStore requires a non-empty string passphrase");
+  }
+  function encrypt(value) {
+    var salt = crypto.getRandomValues(new Uint8Array(16));
+    var iv = crypto.getRandomValues(new Uint8Array(12));
+    return deriveKey(passphrase, salt).then(function(key) {
+      var enc = new TextEncoder();
+      var data = enc.encode(JSON.stringify(value));
+      return crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, data).then(function(cipherBuf) {
+        return { s: toB64(salt), iv: toB64(iv), c: toB64(new Uint8Array(cipherBuf)) };
+      });
+    });
+  }
+  function decrypt(envelope) {
+    if (!envelope || typeof envelope !== "object" || !envelope.c) return Promise.resolve(void 0);
+    var salt = fromB64(envelope.s);
+    var iv = fromB64(envelope.iv);
+    var cipher = fromB64(envelope.c);
+    return deriveKey(passphrase, salt).then(function(key) {
+      return crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, cipher).then(function(plainBuf) {
+        var dec = new TextDecoder();
+        return JSON.parse(dec.decode(plainBuf));
+      });
+    });
+  }
+  return {
+    backend: store.backend,
+    get: function(key) {
+      return store.get(key).then(decrypt);
+    },
+    set: function(key, value) {
+      return encrypt(value).then(function(envelope) {
+        return store.set(key, envelope);
+      });
+    },
+    del: function(key) {
+      return store.del(key);
+    },
+    clear: function() {
+      return store.clear();
+    },
+    keys: function() {
+      return store.keys();
+    }
+  };
+}
 export {
   capabilities,
+  createEncryptedStore,
   createStore,
   defaultStore
 };

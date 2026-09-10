@@ -1,6 +1,6 @@
 {
   "name": "zelvior-runtime",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "Dependency-free, adaptive browser runtime for lazy loading, scheduling, and self-tuning performance based on live device/browser conditions.",
   "license": "MIT",
   "author": "Zelvior",
@@ -118,7 +118,7 @@
       "require": "./dist/storage.min.cjs",
       "default": "./dist/storage.esm.min.js"
     },
-        "./tier": {
+    "./tier": {
       "types": "./dist/tier.d.ts",
       "import": "./dist/tier.esm.js",
       "require": "./dist/tier.cjs",
@@ -200,6 +200,18 @@
       "browser": "./dist/zelvior.legacy.min.js",
       "default": "./dist/zelvior.legacy.min.js"
     },
+    "./security": {
+      "types": "./dist/security.d.ts",
+      "import": "./dist/security.esm.js",
+      "require": "./dist/security.cjs",
+      "default": "./dist/security.esm.js"
+    },
+    "./security/min": {
+      "types": "./dist/security.d.ts",
+      "import": "./dist/security.esm.min.js",
+      "require": "./dist/security.min.cjs",
+      "default": "./dist/security.esm.min.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -219,10 +231,20 @@
   },
   "scripts": {
     "build": "node build.mjs",
-    "test": "node --test"
+    "test": "node --test",
+    "test:coverage": "node --test --experimental-test-coverage",
+    "bench": "node bench.mjs",
+    "test:e2e": "playwright test",
+    "lint": "eslint src/ build.mjs bench.mjs test/",
+    "format": "prettier --write eslint.config.js bench.mjs package.json .prettierrc.json",
+    "format:check": "prettier --check eslint.config.js bench.mjs package.json .prettierrc.json"
   },
   "devDependencies": {
-    "esbuild": "^0.24.0",
-    "jsdom": "^25.0.0"
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.63.0",
+    "esbuild": "^0.24.2",
+    "eslint": "^10.10.0",
+    "jsdom": "^25.0.1",
+    "prettier": "^3.9.6"
   }
 }

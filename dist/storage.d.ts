@@ -14,4 +14,5 @@ export interface ZStore {
 
 export function createStore(opts?: StorageOptions): ZStore;
 export function defaultStore(): ZStore;
+export function createEncryptedStore(store: ZStore, passphrase: string): ZStore;
 export const capabilities: { indexedDB: boolean; localStorage: boolean };

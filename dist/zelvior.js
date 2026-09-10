@@ -31,7 +31,7 @@ var Zelvior = (() => {
     Scheduler: () => Scheduler,
     default: () => zelvior_default
   });
-  var Z = { version: "0.10.0" };
+  var Z = { version: "0.11.0" };
   var enabled = false;
   var doc = document;
   var win = window;
@@ -433,7 +433,7 @@ var Zelvior = (() => {
       profile: { reducedMotion, saveData, effectiveType, slow },
       config,
       setConfig: function(cfg) {
-        for (var k in cfg) if (cfg.hasOwnProperty(k)) config[k] = cfg[k];
+        for (var k in cfg) if (Object.prototype.hasOwnProperty.call(cfg, k)) config[k] = cfg[k];
         emit("config", config);
       },
       deferImages: function(root) {
