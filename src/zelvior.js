@@ -1,7 +1,7 @@
 // Zelvior Runtime v0.3 — MIT
 // ESM source of truth; bundled to esm/cjs/iife by build.mjs
 
-  var Z = { version: '0.11.0' };
+  var Z = { version: '0.12.0' };
   var enabled = false;
   var doc = document, win = window, DE = doc.documentElement;
   var subs = {};
@@ -415,6 +415,64 @@
     var started = false;
     var pinned = false; // true after force(); suppresses decide() until start() is called again
 
+    // --- Battery-aware tuning -------------------------------------------
+    // The Battery Status API (navigator.getBattery) is Chromium-only --
+    // Firefox and Safari never shipped it, and it's been removed from the
+    // living standard over privacy concerns (device fingerprinting via
+    // battery level). It's used here defensively: feature-detected,
+    // read-only, no attempt made to work around its absence, and the
+    // threshold is conservative (unplugged AND <=20% by default) so this
+    // never fires on a healthy laptop that just isn't plugged in.
+    var hasBattery = typeof navigator === 'object' && navigator && typeof navigator.getBattery === 'function';
+    var batteryObj = null;
+    var batteryLevel = 1;
+    var batteryCharging = true;
+    var batteryThreshold = 0.2;
+
+    function lowBattery() {
+      return hasBattery && batteryObj !== null && !batteryCharging && batteryLevel <= batteryThreshold;
+    }
+    function onBatteryChange() {
+      if (!batteryObj) return;
+      batteryLevel = batteryObj.level;
+      batteryCharging = batteryObj.charging;
+      if (pinned || (has.vis && doc.hidden)) return;
+      if (lowBattery() && level < 3) {
+        escStreak = 0; relStreak = 0;
+        apply(3);
+        emit('adaptive:reason', { reason: 'low-battery', level: Math.round(batteryLevel * 100) });
+      }
+      // Deliberately no symmetric immediate de-escalation on charging
+      // resuming or level rising -- same asymmetry as the connection and
+      // FPS signals: escalation is immediate, de-escalation goes through
+      // the normal two-consecutive-good-ticks streak logic in decide().
+    }
+    function startBatteryWatch() {
+      if (!hasBattery) return;
+      safe0(function () {
+        navigator.getBattery().then(function (battery) {
+          batteryObj = battery;
+          onBatteryChange();
+          battery.addEventListener('levelchange', onBatteryChange);
+          battery.addEventListener('chargingchange', onBatteryChange);
+        });
+      });
+    }
+    function stopBatteryWatch() {
+      if (batteryObj) {
+        safe0(function () {
+          batteryObj.removeEventListener('levelchange', onBatteryChange);
+          batteryObj.removeEventListener('chargingchange', onBatteryChange);
+        });
+      }
+      // Deliberately NOT resetting batteryObj/batteryLevel/batteryCharging
+      // to their initial defaults here -- stop() is called on every
+      // Z.disable(), and a caller who immediately re-enables shouldn't
+      // see a false "fully charged" reading flash before the next
+      // getBattery() promise resolves. The stale-but-real last known
+      // reading is more honest than a fake reset.
+    }
+
     function apply(lvl) {
       if (lvl === level && started) return;
       level = lvl;
@@ -480,6 +538,10 @@
         if (level < 3) { escStreak = 0; relStreak = 0; apply(3); emit('adaptive:reason', { reason: 'slow-connection', connection: connectionInfo() }); }
         return;
       }
+      if (lowBattery()) {
+        if (level < 3) { escStreak = 0; relStreak = 0; apply(3); emit('adaptive:reason', { reason: 'low-battery', level: Math.round(batteryLevel * 100) }); }
+        return;
+      }
       if (!fpsHist.length) return;
       var sum = 0; for (var i = 0; i < fpsHist.length; i++) sum += fpsHist[i];
       var avg = sum / fpsHist.length;
@@ -506,6 +568,18 @@
       raf(function () {
         var rafDelta = now() - t0;
         setTimeout(function () {
+          // Battery/connection-driven escalation can legitimately happen
+          // before this fires (getBattery()'s Promise resolves as a
+          // microtask, well before this raf+setTimeout chain settles).
+          // Blindly overwriting that with a timing-only classification
+          // was a real bug -- a phone at 15% unplugged battery would get
+          // escalated to max by onBatteryChange(), then immediately
+          // de-escalated back down by startupProbe() 600ms later, since
+          // fast startup timing alone said "this device is fine."
+          // Startup classification defers to those signals first, same
+          // precedence order decide() already uses.
+          if (pinned) { emit('adaptive:startup', { rafDelta: Math.round(rafDelta), totalDelay: Math.round(now() - t0), level: level, skipped: 'pinned' }); return; }
+          if (slowConnection() || lowBattery()) { emit('adaptive:startup', { rafDelta: Math.round(rafDelta), totalDelay: Math.round(now() - t0), level: level, skipped: 'degraded-signal' }); return; }
           var totalDelay = now() - t0;
           if (rafDelta > 50 || totalDelay > 80) apply(3);
           else if (rafDelta > 30 || totalDelay > 50) apply(2);
@@ -531,6 +605,7 @@
         if (has.net && win.navigator.connection && win.navigator.connection.addEventListener) {
           safe0(function () { win.navigator.connection.addEventListener('change', onConnectionChange); });
         }
+        startBatteryWatch();
       },
       stop: function () {
         started = false;
@@ -539,13 +614,16 @@
         if (has.net && win.navigator.connection && win.navigator.connection.removeEventListener) {
           safe0(function () { win.navigator.connection.removeEventListener('change', onConnectionChange); });
         }
+        stopBatteryWatch();
       },
       force: function (lvl) { if (lvl >= 0 && lvl < LEVELS.length) { pinned = true; apply(lvl); } },
       get pinned() { return pinned; },
       get connection() { return connectionInfo(); },
+      get battery() { return { supported: hasBattery, level: Math.round(batteryLevel * 100), charging: batteryCharging, low: lowBattery() }; },
+      setBatteryThreshold: function (pct) { if (typeof pct === 'number' && pct >= 0 && pct <= 1) batteryThreshold = pct; },
       onMetrics: onMetrics,
       onLongTask: onLongTask,
-      snapshot: function () { return { level: level, name: LEVELS[level].name, fpsAvg: Math.round(this.fpsAvg), busyRatio: Math.round(busyRatio * 100), probeDelay: Math.round(lastProbeDelay), escStreak: escStreak, relStreak: relStreak, pinned: pinned, connection: connectionInfo() }; }
+      snapshot: function () { return { level: level, name: LEVELS[level].name, fpsAvg: Math.round(this.fpsAvg), busyRatio: Math.round(busyRatio * 100), probeDelay: Math.round(lastProbeDelay), escStreak: escStreak, relStreak: relStreak, pinned: pinned, connection: connectionInfo(), battery: this.battery }; }
     };
   })();
 

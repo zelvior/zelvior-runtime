@@ -6,22 +6,24 @@
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 Dependency-free, adaptive browser runtime for lazy-loading, scheduling, and
-self-tuning performance based on live device/browser conditions. **~19.4KB
-minified, ~7.0KB gzipped core bundle, zero runtime dependencies.**
+self-tuning performance based on live device/browser conditions. **~20.5KB
+minified, ~7.3KB gzipped core bundle, zero runtime dependencies.**
 
-> **Version note:** this package is at v0.11.0 locally. v0.8.0-v0.10.0
+> **Version note:** this package is at v0.12.0 locally. v0.8.0-v0.10.0
 > added six new zero-coupling modules (`tier`, `raf`, `idle`, `resize`,
 > `intersect`, `paint`), an IndexedDB-first `storage` module, an es5
 > `zelvior.legacy.js` build target, and `Z.lite` — an opt-in, default-off
 > visual-simplification mode. v0.11.0 added `zelvior-runtime/security`
 > (client-side hardening: sanitization, URL-safety, clickjacking,
 > prototype-pollution freezing, CSRF tokens) and encryption-at-rest for
-> `storage` via `createEncryptedStore`. Core bundle size is unaffected by
-> v0.11.0 (both are separate zero-coupling modules, not part of the core
-> import) — it grew from ~16.8KB → ~19.4KB minified across v0.8.0-v0.10.0
-> (~6.3KB → ~7.0KB gzipped) and has stayed there since. See the exact,
-> regenerated-on-every-build sizes in the Modules section and Benchmarks
-> below, and CHANGELOG.md for what changed in each release.
+> `storage` via `createEncryptedStore`. v0.12.0 added real battery-aware
+> tuning to `Adaptive` (see Subsystems below) — the one change in this
+> range that touches the core bundle, growing it from ~19.4KB → ~20.5KB
+> minified (~7.0KB → ~7.3KB gzipped); `security` and every module added
+> since v0.8.0 are separate zero-coupling imports and don't affect core
+> size at all. See the exact, regenerated-on-every-build sizes in the
+> Modules section and Benchmarks below, and CHANGELOG.md for what changed
+> in each release.
 
 > **About `npm WARN Zelvior No description`/`No repository field`/etc.:**
 > if you see these while running `npm install zelvior-runtime`, they are
@@ -30,6 +32,24 @@ minified, ~7.0KB gzipped core bundle, zero runtime dependencies.**
 > `package.json` in your current directory when none exists, and warns
 > about *that* stub. Run `npm init -y` first, or install inside an
 > existing project, to avoid seeing them.
+
+## Contents
+
+- [Install](#install)
+- [CDN (no build step, no install)](#cdn-no-build-step-no-install)
+- [Quick API](#quick-api)
+- [Modules (standalone, zero-coupling)](#modules-standalone-zero-coupling)
+- [Subsystems](#subsystems)
+- [Formats](#formats)
+- [Browser support](#browser-support)
+- [Benchmarks](#benchmarks)
+- [TypeScript](#typescript)
+- [Testing](#testing)
+- [Security](#security)
+- [Landing page](#landing-page)
+- [Documentation](#documentation)
+- [Building from source](#building-from-source)
+- [License](#license)
 
 ## Install
 
@@ -92,13 +112,8 @@ None of them are loaded or run unless you import them; none change any
 browser default behavior on their own. `events`/`dom`/`scroll` added in
 v0.5.0; `virtual` added in v0.6.0; `net` added in v0.7.0; `storage`,
 `tier`, `raf`, `idle`, `resize`, `intersect`, `paint` all added in v0.8.0;
-`security` added in v0.11.0.
-
-**Documentation gap, stated honestly:** `tier`, `raf`, `idle`, `resize`,
-`intersect`, and `paint` don't have detailed subsections below yet
-(`storage` and `security` do, added alongside this note) — check
-`src/modules/*.d.ts` for their full API in the meantime, or open an issue
-if you want one prioritized.
+`security` added in v0.11.0. Every module listed above has a detailed
+subsection with real, tested evidence, not just a signature list.
 
 ### `zelvior-runtime/events`
 
@@ -364,12 +379,107 @@ against `Object.isFrozen()` (not just "ran without error"), and a full
 CSRF token round-trip that also confirms a wrong token and a
 different-key lookup both correctly fail.
 
+### `zelvior-runtime/tier`
+
+```js
+import { detectTier } from 'zelvior-runtime/tier';
+```
+
+**~1.0KB minified / ~0.6KB gzipped** (`tier.esm.min.js`).
+
+| Export | Signature | What it does |
+|---|---|---|
+| `detectTier()` | `() => { tier: 'low'\|'mid'\|'high', cores: number\|null, memory: number\|null, connection: string\|null, saveData: boolean, legacy: boolean, reasons: string[] }` | One-shot, synchronous device-capability classification from cheap signals (`navigator.hardwareConcurrency`, `navigator.deviceMemory` — Chromium-only, `navigator.connection.effectiveType`, and a feature-detection check for APIs common on any browser from the last ~8 years). No benchmarking loop, doesn't block the thread. `reasons` lists which specific signals pushed the score down (e.g. `'low-cores'`, `'legacy-engine'`), so calling code can log *why* a tier was assigned, not just the result. |
+
+Other modules (`tier` and `paint`) read from `detectTier()`'s tier value
+by convention when you wire them together yourself — this module doesn't
+automatically feed into `Adaptive`; it's a standalone signal for your own
+tier-based branching (e.g. skip an expensive feature entirely on `'low'`).
+
+### `zelvior-runtime/raf`
+
+```js
+import { schedule, unschedule, clear, pending } from 'zelvior-runtime/raf';
+```
+
+**~0.7KB minified / ~0.4KB gzipped** (`raf.esm.min.js`).
+
+| Export | Signature | What it does |
+|---|---|---|
+| `schedule(fn)` | `(fn: (ts: number) => void) => fn` | Queues `fn` to run on the **next shared** `requestAnimationFrame` tick. All calls across your whole page ride one rAF registration instead of each feature registering its own — real overhead on slow hardware when several independent things each want a frame callback. Returns `fn` itself (so you can pass the same reference to `unschedule` later). |
+| `unschedule(fn)` | `(fn) => void` | Removes `fn` from the queue if it hasn't run yet. |
+| `clear()` | `() => void` | Cancels everything currently queued and the underlying rAF registration. |
+| `pending()` | `() => number` | Count of currently-queued callbacks. |
+
+### `zelvior-runtime/idle`
+
+```js
+import { onIdle, idleEach, supported } from 'zelvior-runtime/idle';
+```
+
+**~0.8KB minified / ~0.4KB gzipped** (`idle.esm.min.js`).
+
+| Export | Signature | What it does |
+|---|---|---|
+| `onIdle(fn, opts?)` | `(fn: (deadline) => void, opts?: { timeout?: number }) => cancelFn` | `requestIdleCallback` with a real `setTimeout`-based fallback — plain `window.requestIdleCallback` is absent on **all** Safari versions and on IE/old Edge, not just ancient browsers. The fallback deadline object shape-matches the real one (`didTimeout`, `timeRemaining()`) so calling code never has to branch on which path it's on. |
+| `idleEach(items, work, onDone?)` | `<T>(items: T[], work: (item: T, i: number) => void, onDone?: () => void) => void` | Runs `work` over `items` in idle-time chunks, checking `deadline.timeRemaining()` between each item and yielding back to `onIdle` when the budget runs out, so a large array never blocks the main thread past the browser's available idle time in one shot. |
+| `supported` | `boolean` | Whether native `requestIdleCallback` exists (informational — `onIdle`/`idleEach` work either way). |
+
+### `zelvior-runtime/resize`
+
+```js
+import { onResize, supported } from 'zelvior-runtime/resize';
+```
+
+**~1.2KB minified / ~0.6KB gzipped** (`resize.esm.min.js`).
+
+| Export | Signature | What it does |
+|---|---|---|
+| `onResize(el, cb)` | `(el: Element, cb: (entry) => void) => unwatchFn` | Watches `el` for size changes. Internally, **one shared `ResizeObserver`** instance fans out to every element watched this way, instead of the common pattern of one `ResizeObserver` per component/widget — real savings on element-heavy pages. Falls back to a throttled `window.resize` listener + manual `getBoundingClientRect()` polling when `ResizeObserver` is unavailable (old Safari/Firefox, IE). Returns an unwatch function. |
+| `supported` | `boolean` | Whether native `ResizeObserver` exists. |
+
+### `zelvior-runtime/intersect`
+
+```js
+import { onIntersect, supported } from 'zelvior-runtime/intersect';
+```
+
+**~1.5KB minified / ~0.8KB gzipped** (`intersect.esm.min.js`).
+
+| Export | Signature | What it does |
+|---|---|---|
+| `onIntersect(el, cb, opts?)` | `(el: Element, cb: (isIntersecting: boolean, entry) => void, opts?: { rootMargin?: string }) => unwatchFn` | Watches `el` for viewport intersection. Shares **one `IntersectionObserver` per distinct `rootMargin`** across every element watched with that margin, rather than one instance per element (the pattern most lazy-load libraries use, and the dominant real cost on element-heavy low-end pages). Falls back to a throttled scroll/resize-driven rect check when unavailable. |
+| `supported` | `boolean` | Whether native `IntersectionObserver` exists. |
+
+### `zelvior-runtime/paint`
+
+```js
+import { read, write, clear } from 'zelvior-runtime/paint';
+```
+
+**~0.6KB minified / ~0.4KB gzipped** (`paint.esm.min.js`).
+
+| Export | Signature | What it does |
+|---|---|---|
+| `read(fn)` | `(fn: () => void) => void` | Queues a DOM **read** (measurement — `getBoundingClientRect()`, `offsetWidth`, etc.) to run before any queued writes this frame. |
+| `write(fn)` | `(fn: () => void) => void` | Queues a DOM **write** (mutation — style/attribute changes) to run after all queued reads this frame. |
+| `clear()` | `() => void` | Cancels everything queued for the next flush. |
+
+FastDOM-style batching: separating reads from writes into distinct phases
+avoids forced synchronous layout ("layout thrashing") — interleaving a
+read right after a write forces the browser to recalculate layout
+immediately instead of batching it, and that's the single biggest
+self-inflicted perf cost on low-end devices, where a reflow is far more
+expensive per pixel than on fast hardware.
+
 ## Subsystems
 
 - `Zelvior.scheduler` — priority task queue (`add`, `addIdle`, `nextFrame`, `whenIdle`, `clear`, `pending`)
 - `Zelvior.observer` — unified mutation/resize/scroll/intersection/visibility event bus (`on`, `off`, `watch`, `unwatch`)
 - `Zelvior.optimizer` — image lazy-load, reduced-motion CSS injection, chunked work (`split`), write batching (`batch`)
-- `Zelvior.adaptive` — self-tuning quality level (`quality` → `balanced` → `efficient` → `max`) driven by FPS/long-tasks/main-thread busy ratio, **and, since v0.7.0, real connection quality** (`saveData`/`effectiveType` via the Network Information API where supported — see `Zelvior.adaptive.connection`) — a Data Saver user or a `slow-2g`/`2g` connection immediately biases toward the conservative level, independent of how good the FPS looks
+- `Zelvior.adaptive` — self-tuning quality level (`quality` → `balanced` → `efficient` → `max`) driven by FPS/long-tasks/main-thread busy ratio, real connection quality (`saveData`/`effectiveType` via the Network Information API where supported — since v0.7.0), **and, since v0.12.0, real device battery state** (`navigator.getBattery()` where supported — Chromium only, see below) — a Data Saver user, a `slow-2g`/`2g` connection, or a device unplugged and below 20% battery all immediately bias toward the most conservative level, independent of how good the FPS looks. This specific combination — FPS + long-tasks + connection + battery, all feeding one adaptive quality dial — is not something the common lazy-load/scheduler libraries in this space do; most only react to viewport intersection or, at most, `prefers-reduced-motion`.
+
+  **Battery API, in detail:** `Zelvior.adaptive.battery` → `{ supported, level, charging, low }` (`level` is 0-100, `low` is the live low-battery verdict). `Zelvior.adaptive.setBatteryThreshold(pct)` changes the "low" cutoff (default `0.2` = 20%; unplugged **and** at-or-below this counts as low — a battery that's simply not plugged in but at 80% never triggers this). The Battery Status API is Chromium-only (Firefox and Safari never shipped it, and it's been removed from the living web standard over device-fingerprinting concerns) — feature-detected, read-only, and `supported: false` is reported honestly rather than assuming a healthy battery when the API is simply absent. Real, tested evidence: `test/basic.test.mjs` includes 4 battery-specific tests — unsupported-API honesty, immediate escalation via the real `chargingchange`/`levelchange` events (not waiting for the next `decide()` tick), confirming a low-but-*charging* battery never falsely escalates, and confirming `setBatteryThreshold()` actually changes the cutoff. Building this test surfaced a real bug: `startupProbe()` was unconditionally overwriting whatever level battery/connection-based escalation had already set based on raw startup timing alone — fixed in v0.12.0 to check `slowConnection()`/`lowBattery()` first, same signal precedence `decide()` already used.
 - `Zelvior.recycler` — DOM node pooling (`acquire`, `release`)
 - `Zelvior.memory` — TTL cache + detached-node leak tracking (`set`, `get`, `track`, `leaks`)
 - `Zelvior.metrics` — FPS, memory, DOM count, long tasks, paint, CLS (`snapshot`)
@@ -469,14 +579,16 @@ against a synthetic page (1-in-3 elements carrying a realistic
 shadow+blur+gradient+transform+transition inline style, the rest plain),
 the same harness pattern `test/*.test.mjs` uses.
 
-Measured on Node v22.22.2, 2026-09-09:
+Measured on Node v22.22.2, 2026-09-10 (v0.12.0 — timings shift slightly
+run to run due to ordinary jsdom/CI variance; re-run `node bench.mjs`
+yourself for your exact hardware):
 
 | Elements | Time | Inline-style bytes before → after | Removed |
 |---|---|---|---|
-| 100 | 10.3ms | 10,052 → 1,518 | 8,534B (84.9%) |
-| 1,000 | 35.8ms | 99,152 → 15,318 | 83,834B (84.6%) |
-| 5,000 | 75.8ms | 495,076 → 76,659 | 418,417B (84.5%) |
-| 20,000 | 245.1ms | 1,980,076 → 306,659 | 1,673,417B (84.5%) |
+| 100 | 9.6ms | 10,052 → 1,518 | 8,534B (84.9%) |
+| 1,000 | 47.5ms | 99,152 → 15,318 | 83,834B (84.6%) |
+| 5,000 | 90.4ms | 495,076 → 76,659 | 418,417B (84.5%) |
+| 20,000 | 309.2ms | 1,980,076 → 306,659 | 1,673,417B (84.5%) |
 
 Scaling is linear (fixed per-element cost, not quadratic) — worth stating
 explicitly because it wasn't always: building this benchmark surfaced a
@@ -494,6 +606,35 @@ real browser by no longer rendering shadows/blur/gradients/3D transforms —
 that requires Chrome DevTools' Performance panel on a real page, which we
 haven't done. If you run that comparison, please open an issue with the
 numbers.
+
+### Current bundle sizes (exact, regenerated by every `npm run build`)
+
+Every number below came directly out of the `node build.mjs` run used to
+produce this release — not estimated, not from an old build. Run
+`npm run build` yourself any time to get current numbers for your checkout.
+
+| File | Minified | Gzipped |
+|---|---|---|
+| `zelvior.min.js` (core, IIFE) | 21,037B (~20.5KB) | 7,492B (~7.3KB) |
+| `zelvior.esm.min.js` (core, ESM) | 20,297B (~19.8KB) | 7,204B (~7.0KB) |
+| `zelvior.legacy.min.js` (core, es5) | 21,272B (~20.8KB) | 7,532B (~7.4KB) |
+| `storage.esm.min.js` | 5,866B | 1,835B |
+| `security.esm.min.js` | 2,416B | 1,222B |
+| `net.esm.min.js` | — | — see `BUNDLE_SIZES.md` |
+| `tier.esm.min.js` | 966B | 581B |
+| `raf.esm.min.js` | 655B | 411B |
+| `idle.esm.min.js` | 762B | 441B |
+| `resize.esm.min.js` | 1,170B | 638B |
+| `intersect.esm.min.js` | 1,492B | 789B |
+| `paint.esm.min.js` | 577B | 363B |
+
+Core grew from ~19.4KB → ~20.5KB minified (~7.0KB → ~7.3KB gzipped)
+between v0.11.0 and v0.12.0 — entirely from the new battery-aware
+`Adaptive` signal (see Subsystems above); every module below the core
+table is zero-coupling and only adds to your bundle if you actually
+import it. See [BUNDLE_SIZES.md](./BUNDLE_SIZES.md) for the complete,
+regenerated table of every build variant (ESM/CJS/IIFE × normal/minified
+× every module).
 
 ## TypeScript
 
@@ -528,7 +669,7 @@ npm run test:coverage   # node --test --experimental-test-coverage
 
 Measured, current result (regenerate with the command above — this
 number moves as modules/tests are added, so treat it as a snapshot, not a
-permanent claim): **90.63% line / 83.94% branch / 90.14% function**
+permanent claim): **90.98% line / 84.39% branch / 90.57% function**
 overall across the `.cjs` module builds and their test files (`dom`,
 `events`, `net`, `scroll`, `security`, `storage`, `virtual`). Per-file,
 this ranges from 100% (`net.cjs`) down to 51.73% line coverage on
@@ -542,7 +683,7 @@ load the core `dist/zelvior.js` via `window.eval(source)` against a raw
 string — which is how the suite exercises the real built artifact rather
 than an un-bundled mock, but it also means Node's coverage instrumentation
 (which hooks module loading) can't see inside that eval'd code at all. The
-63 passing tests are real evidence the core runtime and every module
+67 passing tests are real evidence the core runtime and every module
 works; the coverage percentage above is real evidence about the specific
 `.cjs` modules it can actually instrument, not a claim about `zelvior.js`'s
 internals or full coverage of every module's every path.

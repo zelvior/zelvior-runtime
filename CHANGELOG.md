@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.12.0
+
+### Added
+- **Real battery-aware tuning in `Adaptive`.** Uses the Battery Status API (`navigator.getBattery()`, Chromium-only) to escalate to the most conservative quality level when a device is unplugged and at or below 20% battery (configurable via `Zelvior.adaptive.setBatteryThreshold(pct)`), same immediate-escalation/gradual-de-escalation asymmetry the existing FPS and connection signals already use. `Zelvior.adaptive.battery` exposes `{ supported, level, charging, low }`. Feature-detected and read-only; reports `supported: false` honestly on Firefox/Safari (which never shipped this API) rather than assuming a healthy battery.
+- **4 new tests** for the battery feature in `test/basic.test.mjs`, following the same real-jsdom-plus-mocked-event-source pattern already used for the connection-change test — including a genuine escalation-via-real-events test, a "charging never escalates even at 5%" test, and a threshold-configuration test.
+- **README documentation for the 6 modules that had none**: `tier`, `raf`, `idle`, `resize`, `intersect`, `paint` all now have full subsections (signatures, real behavior, sizes) — closing the honest gap flagged in v0.11.0's README note.
+- **A current, exact bundle-size table** in the Benchmarks section, generated from this release's actual `npm run build` output rather than the previous version's numbers.
+
+### Fixed
+- **Real bug found by the new battery tests, not a test artifact**: `Adaptive.startupProbe()` unconditionally applied a quality level based on raw startup timing alone, **overwriting** whatever level battery- or connection-based escalation had already set moments earlier (`navigator.getBattery()`'s Promise resolves as a microtask, well before `startupProbe`'s `raf`+`setTimeout` chain settles ~600ms later). A phone unplugged at 15% would get correctly escalated to max by the battery handler, then immediately de-escalated back down by `startupProbe` reporting "this device is fine" based on fast jsdom-equivalent timing. Fixed by having `startupProbe` check `slowConnection()`/`lowBattery()` first, matching the precedence `decide()` already used.
+
 ## v0.11.0
 
 ### Added

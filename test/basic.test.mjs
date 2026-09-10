@@ -279,6 +279,104 @@ test('the connection "change" event triggers an immediate reaction, not waiting 
   teardown(Z);
 });
 
+test('adaptive.battery: unsupported (no navigator.getBattery) reports honestly, does not fake a "fully charged" reading', () => {
+  const { window, Z } = setup();
+  // jsdom does not implement navigator.getBattery -- this IS the real,
+  // honest "unsupported" case (Firefox/Safari never shipped it either),
+  // not a gap in the test.
+  assert.equal(typeof window.navigator.getBattery, 'undefined');
+  const battery = Z.adaptive.battery;
+  assert.equal(battery.supported, false);
+  teardown(Z);
+});
+
+test('adaptive: low, unplugged battery escalates to max level immediately via the real chargingchange/levelchange events', async () => {
+  const dom = new JSDOM('<!doctype html><html><body></body></html>', {
+    url: 'https://example.com/', runScripts: 'outside-only', pretendToBeVisual: true,
+  });
+  global.window = dom.window;
+  global.document = dom.window.document;
+  const listeners = {};
+  const mockBattery = {
+    level: 1,
+    charging: true,
+    addEventListener: (type, fn) => { listeners[type] = fn; },
+    removeEventListener: (type) => { delete listeners[type]; },
+  };
+  // navigator.getBattery() is the real (Chromium-only) API shape: an async
+  // method returning a Promise of a BatteryManager -- mocked here since
+  // jsdom doesn't implement it, which is the only way to test this
+  // integration point at all; documented in bench/README, not hidden.
+  dom.window.navigator.getBattery = () => Promise.resolve(mockBattery);
+  window.eval(source);
+  const Z = window.Zelvior;
+  Z.enable({ adaptive: true });
+  await new Promise((r) => setTimeout(r, 700)); // let getBattery()'s promise resolve and startupProbe settle
+
+  assert.equal(Z.adaptive.level, 1, 'sanity: normal default level before battery degrades');
+  assert.equal(Z.adaptive.battery.supported, true);
+  assert.ok(typeof listeners.levelchange === 'function', 'Adaptive.start() should have registered real battery listeners');
+
+  // Simulate unplugging at 15% -- below the default 20% threshold.
+  mockBattery.charging = false;
+  mockBattery.level = 0.15;
+  listeners.chargingchange();
+
+  assert.equal(Z.adaptive.level, 3, 'low unplugged battery should escalate to max level immediately, not wait for the next decide() tick');
+  assert.equal(Z.adaptive.battery.low, true);
+  assert.equal(Z.adaptive.battery.level, 15);
+
+  teardown(Z);
+});
+
+test('adaptive: a healthy battery level, or being plugged in, never triggers battery-based escalation', async () => {
+  const dom = new JSDOM('<!doctype html><html><body></body></html>', {
+    url: 'https://example.com/', runScripts: 'outside-only', pretendToBeVisual: true,
+  });
+  global.window = dom.window;
+  global.document = dom.window.document;
+  const listeners = {};
+  const mockBattery = {
+    level: 0.05, // critically low...
+    charging: true, // ...but plugged in, so this must NOT escalate
+    addEventListener: (type, fn) => { listeners[type] = fn; },
+    removeEventListener: (type) => { delete listeners[type]; },
+  };
+  dom.window.navigator.getBattery = () => Promise.resolve(mockBattery);
+  window.eval(source);
+  const Z = window.Zelvior;
+  Z.enable({ adaptive: true });
+  await new Promise((r) => setTimeout(r, 700));
+
+  assert.equal(Z.adaptive.level, 1, 'a low battery that is actively charging should not force max-conservative mode');
+  assert.equal(Z.adaptive.battery.low, false);
+
+  teardown(Z);
+});
+
+test('adaptive.setBatteryThreshold() actually changes the escalation threshold', async () => {
+  const dom = new JSDOM('<!doctype html><html><body></body></html>', {
+    url: 'https://example.com/', runScripts: 'outside-only', pretendToBeVisual: true,
+  });
+  global.window = dom.window;
+  global.document = dom.window.document;
+  const listeners = {};
+  const mockBattery = {
+    level: 0.5, charging: false, // 50%, unplugged -- above the default 20% threshold
+    addEventListener: (type, fn) => { listeners[type] = fn; },
+    removeEventListener: (type) => { delete listeners[type]; },
+  };
+  dom.window.navigator.getBattery = () => Promise.resolve(mockBattery);
+  window.eval(source);
+  const Z = window.Zelvior;
+  Z.adaptive.setBatteryThreshold(0.6); // raise the bar so 50% now counts as "low"
+  Z.enable({ adaptive: true });
+  await new Promise((r) => setTimeout(r, 700));
+
+  assert.equal(Z.adaptive.level, 3, 'raising the threshold above the current level should make an otherwise-fine battery count as low');
+  teardown(Z);
+});
+
 test('Adaptive.stop() removes the connection change listener (no leak)', async () => {
   const dom = new JSDOM('<!doctype html><html><body></body></html>', {
     url: 'https://example.com/', runScripts: 'outside-only', pretendToBeVisual: true,

@@ -54,7 +54,7 @@ var Zelvior = (function() {
       return zelvior_default;
     }
   });
-  var Z = { version: "0.11.0" };
+  var Z = { version: "0.12.0" };
   var enabled = false;
   var doc = document;
   var win = window;
@@ -633,7 +633,7 @@ var Zelvior = (function() {
       }
     };
   }();
-  var Adaptive = /* @__PURE__ */ function() {
+  var Adaptive = function() {
     var LEVELS = [
       { name: "quality", rootMargin: "500px", chunk: 6, reduceAnim: 0, observeAttrs: 1, pollInterval: 1500, idleBoost: 1 },
       { name: "balanced", rootMargin: "250px", chunk: 12, reduceAnim: 0, observeAttrs: 1, pollInterval: 1e3, idleBoost: 0 },
@@ -649,6 +649,45 @@ var Zelvior = (function() {
     var busyRatio = 0;
     var started = false;
     var pinned = false;
+    var hasBattery = typeof navigator === "object" && navigator && typeof navigator.getBattery === "function";
+    var batteryObj = null;
+    var batteryLevel = 1;
+    var batteryCharging = true;
+    var batteryThreshold = 0.2;
+    function lowBattery() {
+      return hasBattery && batteryObj !== null && !batteryCharging && batteryLevel <= batteryThreshold;
+    }
+    function onBatteryChange() {
+      if (!batteryObj) return;
+      batteryLevel = batteryObj.level;
+      batteryCharging = batteryObj.charging;
+      if (pinned || has.vis && doc.hidden) return;
+      if (lowBattery() && level < 3) {
+        escStreak = 0;
+        relStreak = 0;
+        apply(3);
+        emit("adaptive:reason", { reason: "low-battery", level: Math.round(batteryLevel * 100) });
+      }
+    }
+    function startBatteryWatch() {
+      if (!hasBattery) return;
+      safe0(function() {
+        navigator.getBattery().then(function(battery) {
+          batteryObj = battery;
+          onBatteryChange();
+          battery.addEventListener("levelchange", onBatteryChange);
+          battery.addEventListener("chargingchange", onBatteryChange);
+        });
+      });
+    }
+    function stopBatteryWatch() {
+      if (batteryObj) {
+        safe0(function() {
+          batteryObj.removeEventListener("levelchange", onBatteryChange);
+          batteryObj.removeEventListener("chargingchange", onBatteryChange);
+        });
+      }
+    }
     function apply(lvl) {
       if (lvl === level && started) return;
       level = lvl;
@@ -715,6 +754,15 @@ var Zelvior = (function() {
         }
         return;
       }
+      if (lowBattery()) {
+        if (level < 3) {
+          escStreak = 0;
+          relStreak = 0;
+          apply(3);
+          emit("adaptive:reason", { reason: "low-battery", level: Math.round(batteryLevel * 100) });
+        }
+        return;
+      }
       if (!fpsHist.length) return;
       var sum = 0;
       for (var i = 0; i < fpsHist.length; i++) sum += fpsHist[i];
@@ -775,6 +823,14 @@ var Zelvior = (function() {
       raf(function() {
         var rafDelta = now() - t0;
         setTimeout(function() {
+          if (pinned) {
+            emit("adaptive:startup", { rafDelta: Math.round(rafDelta), totalDelay: Math.round(now() - t0), level: level, skipped: "pinned" });
+            return;
+          }
+          if (slowConnection() || lowBattery()) {
+            emit("adaptive:startup", { rafDelta: Math.round(rafDelta), totalDelay: Math.round(now() - t0), level: level, skipped: "degraded-signal" });
+            return;
+          }
           var totalDelay = now() - t0;
           if (rafDelta > 50 || totalDelay > 80) apply(3);
           else if (rafDelta > 30 || totalDelay > 50) apply(2);
@@ -817,6 +873,7 @@ var Zelvior = (function() {
             win.navigator.connection.addEventListener("change", onConnectionChange);
           });
         }
+        startBatteryWatch();
       },
       stop: function() {
         started = false;
@@ -829,6 +886,7 @@ var Zelvior = (function() {
             win.navigator.connection.removeEventListener("change", onConnectionChange);
           });
         }
+        stopBatteryWatch();
       },
       force: function(lvl) {
         if (lvl >= 0 && lvl < LEVELS.length) {
@@ -842,10 +900,16 @@ var Zelvior = (function() {
       get connection() {
         return connectionInfo();
       },
+      get battery() {
+        return { supported: hasBattery, level: Math.round(batteryLevel * 100), charging: batteryCharging, low: lowBattery() };
+      },
+      setBatteryThreshold: function(pct) {
+        if (typeof pct === "number" && pct >= 0 && pct <= 1) batteryThreshold = pct;
+      },
       onMetrics: onMetrics,
       onLongTask: onLongTask,
       snapshot: function() {
-        return { level: level, name: LEVELS[level].name, fpsAvg: Math.round(this.fpsAvg), busyRatio: Math.round(busyRatio * 100), probeDelay: Math.round(lastProbeDelay), escStreak: escStreak, relStreak: relStreak, pinned: pinned, connection: connectionInfo() };
+        return { level: level, name: LEVELS[level].name, fpsAvg: Math.round(this.fpsAvg), busyRatio: Math.round(busyRatio * 100), probeDelay: Math.round(lastProbeDelay), escStreak: escStreak, relStreak: relStreak, pinned: pinned, connection: connectionInfo(), battery: this.battery };
       }
     };
   }();
