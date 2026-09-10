@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.10.0
+
+### Fixed
+- **Real O(n²) bug in `Z.lite`'s `stripInlineStyles`.** It iterated `element.getElementsByTagName('*')` — a **live** `HTMLCollection` — and both `.length` and indexed access on a live collection can re-walk the tree on every call (confirmed in jsdom; exact cost varies by engine). Found by writing `bench.mjs` to measure the "brutal" stripping pass at scale for the first time: 20,000 elements took 44.4s before the fix, 245ms after snapshotting the collection to a plain array once — ~181x on this benchmark. `stripSvgFilters`'s loop cached the same way for consistency (its `querySelectorAll` result is static, so it wasn't actually affected, but the pattern should be).
+
+### Added
+- **`bench.mjs`** — real, reproducible benchmark of `Z.lite.enable()`'s DOM-walk cost and inline-style bytes removed, run against the actual built `dist/zelvior.js` inside jsdom (same harness pattern as `test/*.test.mjs`). Run with `node bench.mjs`. Results and methodology are in README.md's Benchmarks section, including an explicit note on what it does *not* measure (real browser paint/compositor time, which requires Chrome DevTools).
+
+### Changed
+- **Version numbering unified.** The npm package and the browser extension previously drifted (extension patch-bumped independently for its own fixes while the runtime stayed on the version it last synced from). Both are now kept at the same version number going forward; this release is v0.10.0 for both.
+
+## v0.9.2
+
+### Changed
+- **`Z.lite` is now maximally aggressive, still lightweight.** Added to the strip list (both the CSS override layer and the active inline-style/attribute deletion pass): `transform`, `perspective`, `backface-visibility`, `clip-path`, `mask`, `border-radius`, `isolation`, fixed background-attachment (parallax), and smooth `scroll-behavior`. This is a genuine trade, not just cosmetic thinning — `transform` removal in particular can affect transform-positioned UI (carousels, off-canvas menus, centered modals), which is exactly the kind of visual/behavioral change this mode is meant to warn about. Bundle cost: the whole runtime is still ~7KB gzipped (`zelvior.min.js`), since this only extends two existing arrays rather than adding new code paths. Still default OFF.
+
 ## v0.9.1
 
 ### Changed

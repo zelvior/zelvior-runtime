@@ -1,7 +1,7 @@
 // Zelvior Runtime v0.3 — MIT
 // ESM source of truth; bundled to esm/cjs/iife by build.mjs
 
-  var Z = { version: '0.9.1' };
+  var Z = { version: '0.10.0' };
   var enabled = false;
   var doc = document, win = window, DE = doc.documentElement;
   var subs = {};
@@ -292,9 +292,20 @@
       'background-blend-mode:normal!important;',
       'mix-blend-mode:normal!important;',
       'will-change:auto!important;',
-      'text-decoration-color:currentColor!important;',
       'animation:none!important;',
       'transition:none!important;',
+      'transform:none!important;',
+      'perspective:none!important;',
+      'backface-visibility:visible!important;',
+      '-webkit-backface-visibility:visible!important;',
+      'clip-path:none!important;',
+      '-webkit-clip-path:none!important;',
+      'mask:none!important;',
+      '-webkit-mask:none!important;',
+      'border-radius:0!important;',
+      'isolation:auto!important;',
+      'background-attachment:scroll!important;',
+      'scroll-behavior:auto!important;',
       '}',
       // Gradients/blurred backgrounds specifically (not every background,
       // real photo/pattern backgrounds are left alone).
@@ -312,12 +323,23 @@
       'boxShadow', 'webkitBoxShadow', 'textShadow', 'filter', 'webkitFilter',
       'backdropFilter', 'webkitBackdropFilter', 'mixBlendMode',
       'backgroundBlendMode', 'willChange', 'animation', 'webkitAnimation',
-      'transition', 'webkitTransition'
+      'transition', 'webkitTransition', 'transform', 'webkitTransform',
+      'perspective', 'webkitPerspective', 'backfaceVisibility', 'webkitBackfaceVisibility',
+      'clipPath', 'webkitClipPath', 'mask', 'webkitMask', 'borderRadius', 'isolation'
     ];
 
     function stripInlineStyles(root) {
-      var els = byAll(root || doc);
-      for (var i = 0; i < els.length; i++) {
+      var live = byAll(root || doc);
+      // `byAll()` returns a *live* HTMLCollection. Both `.length` AND
+      // indexed access on a live collection can re-walk the tree on every
+      // call in some engines (confirmed in jsdom; the exact cost varies
+      // by engine, but there is no reason to pay it here) -- this loop
+      // only mutates existing elements' style, never adds/removes
+      // elements, so snapshotting to a plain array once is always safe
+      // and turns an O(n^2)-shaped walk into a real O(n) one.
+      var els = Array.prototype.slice.call(live);
+      var n = els.length;
+      for (var i = 0; i < n; i++) {
         var s = els[i].style;
         if (!s || !s.length) continue;
         for (var j = 0; j < STRIP_PROPS.length; j++) {
@@ -335,7 +357,8 @@
     // so nothing can re-reference them.
     function stripSvgFilters(root) {
       var svgFilters = (root || doc).querySelectorAll ? (root || doc).querySelectorAll('filter') : [];
-      for (var i = 0; i < svgFilters.length; i++) {
+      var n = svgFilters.length; // static NodeList from querySelectorAll -- not live, but cache anyway for consistency
+      for (var i = 0; i < n; i++) {
         var f = svgFilters[i];
         if (f.parentNode) f.parentNode.removeChild(f);
       }

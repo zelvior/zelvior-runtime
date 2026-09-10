@@ -6,20 +6,17 @@
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 Dependency-free, adaptive browser runtime for lazy-loading, scheduling, and
-self-tuning performance based on live device/browser conditions. **~16.8KB
-minified, ~6.3KB gzipped, zero runtime dependencies.**
+self-tuning performance based on live device/browser conditions. **~19.4KB
+minified, ~7.0KB gzipped core bundle, zero runtime dependencies.**
 
-> **Version note:** this package is at v0.7.0 locally. npm's latest
-> published release is v0.6.1 (confirmed live). v0.7.0 (this version)
-> adds real connection-awareness to `Adaptive` and a new
-> `zelvior-runtime/net` module — see the Modules section above and
-> CHANGELOG.md. Worth being direct about: this does **not** make your
-> internet connection faster; it reduces redundant requests and reacts to
-> a genuinely slow/metered connection the same way it already reacts to
-> weak hardware. Core bundle size grew (~16.2KB → ~16.8KB minified) for
-> this — the connection-awareness logic lives in core `Adaptive`, not a
-> separate zero-coupling module, since it's a natural extension of
-> Adaptive's existing signals.
+> **Version note:** this package is at v0.10.0 locally. v0.8.0-v0.10.0
+> added six new zero-coupling modules (`tier`, `raf`, `idle`, `resize`,
+> `intersect`, `paint`), an IndexedDB-first `storage` module, an es5
+> `zelvior.legacy.js` build target, and `Z.lite` — an opt-in, default-off
+> visual-simplification mode. Core bundle size grew from ~16.8KB → ~19.4KB
+> minified across this range (~6.3KB → ~7.0KB gzipped) — see the exact,
+> regenerated-on-every-build sizes in the Modules section and Benchmarks
+> below, and CHANGELOG.md for what changed in each release.
 
 > **About `npm WARN Zelvior No description`/`No repository field`/etc.:**
 > if you see these while running `npm install zelvior-runtime`, they are
@@ -88,7 +85,8 @@ Unlike the subsystems above, these are genuinely separate from the core
 runtime — importing one does not pull in `Zelvior` or any other module.
 None of them are loaded or run unless you import them; none change any
 browser default behavior on their own. `events`/`dom`/`scroll` added in
-v0.5.0; `virtual` added in v0.6.0; `net` added in v0.7.0.
+v0.5.0; `virtual` added in v0.6.0; `net` added in v0.7.0; `storage`,
+`tier`, `raf`, `idle`, `resize`, `intersect`, `paint` all added in v0.8.0.
 
 ### `zelvior-runtime/events`
 
@@ -387,6 +385,45 @@ The improved cases are render/paint-heavy workloads where deferring
 off-screen image work and cooperative scheduling has a clearer,
 lower-risk benefit.
 
+### `Z.lite` DOM-walk cost (measured, reproducible)
+
+The numbers above are real-hardware/real-browser results from a
+third party. The following is **not** that — it's a smaller, narrower claim
+we can actually stand behind: the wall-clock cost of `Z.lite.enable()`'s own
+DOM walk (the part of Lite mode that runs in JS, not the browser's
+paint/compositor work it removes, which we have no way to measure without a
+real browser). Run it yourself with `node bench.mjs` after `npm install &&
+node build.mjs` — it runs the actual built `dist/zelvior.js` inside jsdom
+against a synthetic page (1-in-3 elements carrying a realistic
+shadow+blur+gradient+transform+transition inline style, the rest plain),
+the same harness pattern `test/*.test.mjs` uses.
+
+Measured on Node v22.22.2, 2026-09-09:
+
+| Elements | Time | Inline-style bytes before → after | Removed |
+|---|---|---|---|
+| 100 | 10.3ms | 10,052 → 1,518 | 8,534B (84.9%) |
+| 1,000 | 35.8ms | 99,152 → 15,318 | 83,834B (84.6%) |
+| 5,000 | 75.8ms | 495,076 → 76,659 | 418,417B (84.5%) |
+| 20,000 | 245.1ms | 1,980,076 → 306,659 | 1,673,417B (84.5%) |
+
+Scaling is linear (fixed per-element cost, not quadratic) — worth stating
+explicitly because it wasn't always: building this benchmark surfaced a
+real O(n²) bug in `stripInlineStyles`, which iterated a **live**
+`HTMLCollection` (`element.getElementsByTagName('*')`) with per-index
+access that re-walks the tree in some engines (confirmed in jsdom). Before
+the fix, 20,000 elements took **44.4 seconds**; after snapshotting the
+collection to a plain array once, it's 245ms — an ~181x improvement on
+this benchmark, entirely from fixing a real algorithmic bug the "brutal"
+feature expansion exposed by finally exercising it at scale. See
+[CHANGELOG.md](./CHANGELOG.md) v0.10.0.
+
+What this table does *not* show: actual paint/compositor time saved in a
+real browser by no longer rendering shadows/blur/gradients/3D transforms —
+that requires Chrome DevTools' Performance panel on a real page, which we
+haven't done. If you run that comparison, please open an issue with the
+numbers.
+
 ## TypeScript
 
 Type declarations ship in `dist/zelvior.d.ts` and are resolved automatically
@@ -397,7 +434,8 @@ needed.
 
 ```bash
 npm install   # pulls in the jsdom devDependency
-npm test      # runs test/*.test.mjs (basic + virtual) via Node's built-in test runner
+npm test      # runs test/*.test.mjs (basic, modules, net, virtual) via Node's built-in test runner
+node bench.mjs # runs the Z.lite DOM-walk benchmark shown above, against the built dist/zelvior.js
 ```
 
 The suite runs the actual built `dist/zelvior.js` inside jsdom — a real,
