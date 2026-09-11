@@ -54,7 +54,7 @@ var Zelvior = (function() {
       return zelvior_default;
     }
   });
-  var Z = { version: "0.12.0" };
+  var Z = { version: "0.13.0" };
   var enabled = false;
   var doc = document;
   var win = window;

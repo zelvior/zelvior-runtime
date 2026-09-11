@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.13.0
+
+### Added
+- **`forcePassiveScrolling()`, `restorePassiveScrolling()`, `isForcingPassiveScrolling()`** in `zelvior-runtime/scroll` — an opt-in, off-by-default feature that monkey-patches `EventTarget.prototype.addEventListener` so any `wheel`/`mousewheel`/`touchstart`/`touchmove`/`scroll` listener registered afterward defaults to `{ passive: true }` unless the caller explicitly set `passive: false`. This targets the actual, well-documented cause of "sticky"/janky scrolling that isn't under a site's own control: **other scripts** (ad tags, analytics, third-party widgets) registering non-passive listeners that force the browser to block compositor-driven scrolling until they return, on every event, whether or not they ever call `preventDefault()`. Existing options (e.g. `capture`) are preserved, not clobbered; non-scroll-related event types (`click`, etc.) are left untouched; idempotent (calling it twice doesn't double-wrap). **Documented trade-off, same honesty standard as `Z.lite`:** forcing `passive: true` on a listener that calls `event.preventDefault()` doesn't throw — the browser silently ignores the `preventDefault()` call. Any legitimate custom-scroll widget or drag/touch-gesture handler relying on blocking the default action will stop being able to while this is active. This is why it's a function you call, not a default.
+- **5 real tests** in `test/modules.test.mjs`, using a spy installed in front of `forcePassiveScrolling()`'s call so the tests observe the exact transformed options a real DOM implementation would receive — not a mock of the feature, a test of its actual output.
+- `EventTarget` added to the test harness's aliased-globals list (same pattern already used for `requestAnimationFrame`/`Event`/etc.) — confirmed, not assumed, that jsdom's `window.addEventListener === window.EventTarget.prototype.addEventListener`, the same prototype relationship real browsers have, which is what makes this patch technique valid in the first place.
+
 ## v0.12.0
 
 ### Added

@@ -76,6 +76,42 @@ function onScroll(target, fn, opts) {
     throttled.cancel();
   };
 }
+var patchedAEL = null;
+var FORCE_PASSIVE_TYPES = { wheel: 1, mousewheel: 1, touchstart: 1, touchmove: 1, scroll: 1 };
+function forcePassiveScrolling() {
+  if (patchedAEL) return restore;
+  patchedAEL = EventTarget.prototype.addEventListener;
+  EventTarget.prototype.addEventListener = function(type, listener, options) {
+    if (FORCE_PASSIVE_TYPES[type]) {
+      if (options === void 0 || options === null) {
+        options = { passive: true };
+      } else if (typeof options === "boolean") {
+        options = { capture: options, passive: true };
+      } else if (options.passive === void 0) {
+        var merged = {};
+        for (var k in options) if (Object.prototype.hasOwnProperty.call(options, k)) merged[k] = options[k];
+        merged.passive = true;
+        options = merged;
+      }
+    }
+    return patchedAEL.call(this, type, listener, options);
+  };
+  return restore;
+}
+function restore() {
+  if (!patchedAEL) return;
+  EventTarget.prototype.addEventListener = patchedAEL;
+  patchedAEL = null;
+}
+function restorePassiveScrolling() {
+  restore();
+}
+function isForcingPassiveScrolling() {
+  return patchedAEL !== null;
+}
 export {
-  onScroll
+  forcePassiveScrolling,
+  isForcingPassiveScrolling,
+  onScroll,
+  restorePassiveScrolling
 };

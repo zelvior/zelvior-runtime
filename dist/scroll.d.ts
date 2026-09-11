@@ -13,3 +13,7 @@ export function onScroll(
   fn: (info: ScrollInfo) => void,
   opts?: { capture?: boolean }
 ): () => void;
+
+export function forcePassiveScrolling(): () => void;
+export function restorePassiveScrolling(): void;
+export function isForcingPassiveScrolling(): boolean;

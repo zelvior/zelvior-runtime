@@ -9,7 +9,7 @@ Dependency-free, adaptive browser runtime for lazy-loading, scheduling, and
 self-tuning performance based on live device/browser conditions. **~20.5KB
 minified, ~7.3KB gzipped core bundle, zero runtime dependencies.**
 
-> **Version note:** this package is at v0.12.0 locally. v0.8.0-v0.10.0
+> **Version note:** this package is at v0.13.0 locally. v0.8.0-v0.10.0
 > added six new zero-coupling modules (`tier`, `raf`, `idle`, `resize`,
 > `intersect`, `paint`), an IndexedDB-first `storage` module, an es5
 > `zelvior.legacy.js` build target, and `Z.lite` — an opt-in, default-off
@@ -17,13 +17,14 @@ minified, ~7.3KB gzipped core bundle, zero runtime dependencies.**
 > (client-side hardening: sanitization, URL-safety, clickjacking,
 > prototype-pollution freezing, CSRF tokens) and encryption-at-rest for
 > `storage` via `createEncryptedStore`. v0.12.0 added real battery-aware
-> tuning to `Adaptive` (see Subsystems below) — the one change in this
-> range that touches the core bundle, growing it from ~19.4KB → ~20.5KB
-> minified (~7.0KB → ~7.3KB gzipped); `security` and every module added
-> since v0.8.0 are separate zero-coupling imports and don't affect core
-> size at all. See the exact, regenerated-on-every-build sizes in the
-> Modules section and Benchmarks below, and CHANGELOG.md for what changed
-> in each release.
+> tuning to `Adaptive`. v0.13.0 added `forcePassiveScrolling()` to
+> `zelvior-runtime/scroll` — an opt-in fix for third-party-script-caused
+> scroll jank (see that module's section below). Core bundle size is
+> unaffected by v0.13.0 (`scroll` is a separate zero-coupling module) —
+> it grew from ~19.4KB → ~20.5KB minified in v0.12.0 (~7.0KB → ~7.3KB
+> gzipped, from the battery feature) and has stayed there since. See the
+> exact, regenerated-on-every-build sizes in the Modules section and
+> Benchmarks below, and CHANGELOG.md for what changed in each release.
 
 > **About `npm WARN Zelvior No description`/`No repository field`/etc.:**
 > if you see these while running `npm install zelvior-runtime`, they are
@@ -189,33 +190,87 @@ paints.
 ### `zelvior-runtime/scroll`
 
 ```js
-import { onScroll } from 'zelvior-runtime/scroll';
+import { onScroll, forcePassiveScrolling, restorePassiveScrolling, isForcingPassiveScrolling } from 'zelvior-runtime/scroll';
 
 const unsubscribe = onScroll(({ x, y, target }) => { /* ... */ });
 // or: onScroll(myScrollableDiv, (info) => { ... });
 unsubscribe(); // removes the listener and cancels any pending call
 ```
 
-A passive, `requestAnimationFrame`-throttled scroll listener. Built on
-`events.js`'s `passiveOpts`/`throttleRaf` (small, no logic duplicated).
+**~2.0KB minified / ~0.9KB gzipped** (`scroll.esm.min.js`).
 
-**This module deliberately does not include a custom scrollbar or replace
+| Export | Signature | What it does |
+|---|---|---|
+| `onScroll(fn, opts?)` / `onScroll(target, fn, opts?)` | `(fn: (info) => void, opts?) => unsubscribeFn` | A passive, `requestAnimationFrame`-throttled scroll listener. Built on `events.js`'s `passiveOpts`/`throttleRaf`. Does not modify scrolling itself — only how your own handler is attached and how often it runs. |
+| `forcePassiveScrolling()` | `() => restoreFn` | **Added in v0.13.0.** Monkey-patches `EventTarget.prototype.addEventListener` so `wheel`/`mousewheel`/`touchstart`/`touchmove`/`scroll` listeners registered *after* this call default to `{ passive: true }` unless the caller explicitly set `passive: false`. See the dedicated section below before using this. |
+| `restorePassiveScrolling()` | `() => void` | Undoes `forcePassiveScrolling()`, restoring the original `addEventListener`. Safe to call even if never activated. |
+| `isForcingPassiveScrolling()` | `() => boolean` | Whether the patch is currently active. |
+
+**`onScroll` deliberately does not include a custom scrollbar or replace
 native scrolling in any way.** There is no benchmark evidence that native
 scrolling needs replacing, and a custom scrollbar is real CSS/DOM/
 accessibility surface for a browser feature that already performs well —
 adding one without justification is exactly what this project's own
-guidelines caution against. What genuinely has a measurable cost is
-*listening* carelessly: a non-passive listener can block the compositor
-from scrolling ahead of the main thread, and an unthrottled handler can
-run far more often than once per frame. That's the only thing this module
-addresses.
+guidelines caution against.
 
-**Browser compatibility:** works everywhere `addEventListener` exists;
-inherits `events.js`'s passive/rAF fallbacks.
+#### `forcePassiveScrolling()` — snappier scrolling, in detail
 
-**Does it modify native browser behavior?** No. Scrolling itself is
-completely untouched — only how your own handler is attached and how
-often it runs.
+**What it actually fixes:** the single biggest real cause of "sticky" or
+janky scrolling that a page's *own* code isn't responsible for — other
+scripts on the page (ad tags, analytics beacons, third-party embeds/
+widgets) registering `wheel`/`touchstart`/`touchmove`/`scroll` listeners
+without `{ passive: true }`. A non-passive listener forces the browser to
+wait for that listener to finish running before it's allowed to scroll —
+on every single event, whether or not the listener ever calls
+`preventDefault()`. This is standard, well-documented browser behavior
+(it's the entire reason the `passive` option exists), not a claim unique
+to this runtime. Native compositor-driven scrolling itself is not being
+replaced or reimplemented here — it's already about as fast as it gets;
+this only removes what's blocking it.
+
+```js
+import { forcePassiveScrolling } from 'zelvior-runtime/scroll';
+
+// Call this as early as possible (before third-party scripts attach
+// their own listeners) for it to have any effect on them.
+const restore = forcePassiveScrolling();
+
+// later, if you need the original behavior back:
+restore(); // or restorePassiveScrolling()
+```
+
+**Real trade-off, stated as plainly as `Z.lite`'s — read this before
+using it:** forcing `passive: true` on a listener that calls
+`event.preventDefault()` does not throw. Browsers silently ignore the
+`preventDefault()` call and log a console warning instead. Any legitimate
+custom-scroll widget, drag-to-reorder list, or touch-gesture handler that
+depends on actually blocking the default scroll/touch action **will stop
+being able to do that** while this is active. This is exactly why it's a
+function you call, not a default — same reasoning as `Z.lite`.
+
+**Real, tested evidence** (`test/modules.test.mjs`, 5 tests): a spy
+installed in front of `EventTarget.prototype.addEventListener` *before*
+calling `forcePassiveScrolling()` — so the spy observes the exact
+transformed options a real DOM implementation would receive, not a mock
+of the feature's intent. Confirms an options-less `wheel` listener gets
+`{ passive: true }`; confirms an existing `{ capture: true }` object gets
+`passive` added without losing `capture`; confirms an explicit
+`passive: false` is respected and not overridden; confirms `click` (a
+non-scroll-blocking type) passes through completely unmodified; confirms
+`restorePassiveScrolling()` returns the *exact original function
+reference*, not just an equivalent-behaving one; confirms calling
+`forcePassiveScrolling()` twice doesn't double-wrap.
+
+**Browser compatibility:** `EventTarget.prototype.addEventListener`
+patching relies on `Window`/`Document`/`Element` sharing that prototype —
+confirmed true in jsdom (used for the tests above) and in every modern
+evergreen browser; very old engines that implement each DOM interface
+independently rather than through a shared `EventTarget` prototype (rare,
+pre-2015-era) would not be affected by the patch, which fails safe (the
+patch simply has no effect, rather than breaking anything).
+
+**Browser compatibility (onScroll):** works everywhere `addEventListener`
+exists; inherits `events.js`'s passive/rAF fallbacks.
 
 ### `zelvior-runtime/virtual`
 
@@ -619,6 +674,7 @@ produce this release — not estimated, not from an old build. Run
 | `zelvior.esm.min.js` (core, ESM) | 20,297B (~19.8KB) | 7,204B (~7.0KB) |
 | `zelvior.legacy.min.js` (core, es5) | 21,272B (~20.8KB) | 7,532B (~7.4KB) |
 | `storage.esm.min.js` | 5,866B | 1,835B |
+| `scroll.esm.min.js` | 1,958B | 883B |
 | `security.esm.min.js` | 2,416B | 1,222B |
 | `net.esm.min.js` | — | — see `BUNDLE_SIZES.md` |
 | `tier.esm.min.js` | 966B | 581B |
@@ -669,7 +725,7 @@ npm run test:coverage   # node --test --experimental-test-coverage
 
 Measured, current result (regenerate with the command above — this
 number moves as modules/tests are added, so treat it as a snapshot, not a
-permanent claim): **90.98% line / 84.39% branch / 90.57% function**
+permanent claim): **91.39% line / 84.76% branch / 90.26% function**
 overall across the `.cjs` module builds and their test files (`dom`,
 `events`, `net`, `scroll`, `security`, `storage`, `virtual`). Per-file,
 this ranges from 100% (`net.cjs`) down to 51.73% line coverage on
@@ -683,7 +739,7 @@ load the core `dist/zelvior.js` via `window.eval(source)` against a raw
 string — which is how the suite exercises the real built artifact rather
 than an un-bundled mock, but it also means Node's coverage instrumentation
 (which hooks module loading) can't see inside that eval'd code at all. The
-67 passing tests are real evidence the core runtime and every module
+72 passing tests are real evidence the core runtime and every module
 works; the coverage percentage above is real evidence about the specific
 `.cjs` modules it can actually instrument, not a claim about `zelvior.js`'s
 internals or full coverage of every module's every path.

@@ -49,6 +49,7 @@ export default [
         sessionStorage: 'readonly',
         btoa: 'readonly',
         atob: 'readonly',
+        EventTarget: 'readonly',
       },
     },
     rules: {
@@ -91,6 +92,7 @@ export default [
         clearInterval: 'readonly',
         TextEncoder: 'readonly',
         TextDecoder: 'readonly',
+        EventTarget: 'readonly',
       },
     },
     rules: {
