@@ -76,42 +76,144 @@ function onScroll(target, fn, opts) {
     throttled.cancel();
   };
 }
-var patchedAEL = null;
-var FORCE_PASSIVE_TYPES = { wheel: 1, mousewheel: 1, touchstart: 1, touchmove: 1, scroll: 1 };
-function forcePassiveScrolling() {
-  if (patchedAEL) return restore;
-  patchedAEL = EventTarget.prototype.addEventListener;
-  EventTarget.prototype.addEventListener = function(type, listener, options) {
-    if (FORCE_PASSIVE_TYPES[type]) {
-      if (options === void 0 || options === null) {
-        options = { passive: true };
-      } else if (typeof options === "boolean") {
-        options = { capture: options, passive: true };
-      } else if (options.passive === void 0) {
-        var merged = {};
-        for (var k in options) if (Object.prototype.hasOwnProperty.call(options, k)) merged[k] = options[k];
-        merged.passive = true;
-        options = merged;
+function createAdaptiveScroll(fn, opts) {
+  opts = opts || {};
+  var target = opts.target || window;
+  var capture = !!opts.capture;
+  var settleMs = typeof opts.settleMs === "number" ? opts.settleMs : 150;
+  var lowEndDevice = false;
+  try {
+    var cores = window.navigator.hardwareConcurrency;
+    var mem = window.navigator.deviceMemory;
+    lowEndDevice = typeof cores === "number" && cores <= 2 || typeof mem === "number" && mem <= 2;
+  } catch (e) {
+  }
+  var reducedMotion = false;
+  try {
+    reducedMotion = opts.reducedMotionAware !== false && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  } catch (e) {
+  }
+  var recentLongTasks = 0;
+  var longTaskObserver = null;
+  if (opts.longTaskAware !== false && typeof PerformanceObserver !== "undefined") {
+    try {
+      if (PerformanceObserver.supportedEntryTypes && PerformanceObserver.supportedEntryTypes.indexOf("longtask") > -1) {
+        longTaskObserver = new PerformanceObserver(function(list) {
+          recentLongTasks += list.getEntries().length;
+        });
+        longTaskObserver.observe({ type: "longtask", buffered: false });
+      }
+    } catch (e) {
+      longTaskObserver = null;
+    }
+  }
+  function decayPressure() {
+    if (recentLongTasks > 0) recentLongTasks--;
+  }
+  var reads = [], writes = [];
+  function flushReadsWrites() {
+    var r = reads;
+    reads = [];
+    var w = writes;
+    writes = [];
+    for (var i = 0; i < r.length; i++) {
+      try {
+        r[i]();
+      } catch (e) {
       }
     }
-    return patchedAEL.call(this, type, listener, options);
+    for (var j = 0; j < w.length; j++) {
+      try {
+        w[j]();
+      } catch (e) {
+      }
+    }
+  }
+  var rafId = null;
+  var frameCounter = 0;
+  var settleTimer = null;
+  var stopped = false;
+  function currentPosition() {
+    if (target === window) {
+      return {
+        x: window.pageXOffset !== void 0 ? window.pageXOffset : document.documentElement.scrollLeft,
+        y: window.pageYOffset !== void 0 ? window.pageYOffset : document.documentElement.scrollTop
+      };
+    }
+    return { x: target.scrollLeft, y: target.scrollTop };
+  }
+  function runFrame() {
+    rafId = null;
+    frameCounter++;
+    decayPressure();
+    var underPressure = recentLongTasks >= 2 || lowEndDevice || reducedMotion;
+    var shouldRun = !underPressure || frameCounter % 2 === 0;
+    if (shouldRun) {
+      var pos = currentPosition();
+      try {
+        fn({
+          x: pos.x,
+          y: pos.y,
+          target,
+          lowEndDevice,
+          reducedMotion,
+          underPressure,
+          read: function(r) {
+            reads.push(r);
+          },
+          write: function(w) {
+            writes.push(w);
+          }
+        });
+      } catch (e) {
+      }
+      flushReadsWrites();
+    }
+  }
+  function onScrollEvent() {
+    if (stopped) return;
+    if (rafId === null) rafId = requestAnimationFrame(runFrame);
+    if (settleTimer) clearTimeout(settleTimer);
+    settleTimer = setTimeout(function() {
+      settleTimer = null;
+    }, settleMs);
+  }
+  target.addEventListener("scroll", onScrollEvent, passiveOpts(capture));
+  var touchTarget = target === window ? window : target;
+  touchTarget.addEventListener("touchmove", function() {
+  }, passiveOpts(capture));
+  return {
+    stop: function() {
+      if (stopped) return;
+      stopped = true;
+      target.removeEventListener("scroll", onScrollEvent, passiveOpts(capture));
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+      if (settleTimer) {
+        clearTimeout(settleTimer);
+        settleTimer = null;
+      }
+      if (longTaskObserver) {
+        longTaskObserver.disconnect();
+        longTaskObserver = null;
+      }
+      reads = [];
+      writes = [];
+    },
+    isIdle: function() {
+      return rafId === null && settleTimer === null;
+    },
+    isLowEndDevice: function() {
+      return lowEndDevice;
+    },
+    isReducedMotion: function() {
+      return reducedMotion;
+    }
   };
-  return restore;
-}
-function restore() {
-  if (!patchedAEL) return;
-  EventTarget.prototype.addEventListener = patchedAEL;
-  patchedAEL = null;
-}
-function restorePassiveScrolling() {
-  restore();
-}
-function isForcingPassiveScrolling() {
-  return patchedAEL !== null;
 }
 export {
-  forcePassiveScrolling,
-  isForcingPassiveScrolling,
-  onScroll,
-  restorePassiveScrolling
+  createAdaptiveScroll,
+  onScroll
 };

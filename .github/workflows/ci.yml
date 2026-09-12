@@ -28,9 +28,18 @@ jobs:
       - run: npm ci
 
       - name: Lint
+        # eslint 9+'s stylish formatter uses Node's util.styleText, added
+        # in Node 20.12/21.7 -- running it on Node 18 crashes the whole
+        # job with an unrelated-looking TypeError, not a real lint
+        # failure. Lint/format are style checks, not engine-compat tests,
+        # so they only need to run once; skip on 18 rather than pin an
+        # older eslint just to support a formatter call this old a
+        # runtime can't make.
+        if: matrix.node != 18
         run: npm run lint
 
       - name: Format check (files with an enforced style)
+        if: matrix.node != 18
         run: npm run format:check
 
       - name: Build

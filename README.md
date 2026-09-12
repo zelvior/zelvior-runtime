@@ -9,7 +9,7 @@ Dependency-free, adaptive browser runtime for lazy-loading, scheduling, and
 self-tuning performance based on live device/browser conditions. **~20.5KB
 minified, ~7.3KB gzipped core bundle, zero runtime dependencies.**
 
-> **Version note:** this package is at v0.13.0 locally. v0.8.0-v0.10.0
+> **Version note:** this package is at v0.14.0 locally. v0.8.0-v0.10.0
 > added six new zero-coupling modules (`tier`, `raf`, `idle`, `resize`,
 > `intersect`, `paint`), an IndexedDB-first `storage` module, an es5
 > `zelvior.legacy.js` build target, and `Z.lite` — an opt-in, default-off
@@ -17,14 +17,22 @@ minified, ~7.3KB gzipped core bundle, zero runtime dependencies.**
 > (client-side hardening: sanitization, URL-safety, clickjacking,
 > prototype-pollution freezing, CSRF tokens) and encryption-at-rest for
 > `storage` via `createEncryptedStore`. v0.12.0 added real battery-aware
-> tuning to `Adaptive`. v0.13.0 added `forcePassiveScrolling()` to
-> `zelvior-runtime/scroll` — an opt-in fix for third-party-script-caused
-> scroll jank (see that module's section below). Core bundle size is
-> unaffected by v0.13.0 (`scroll` is a separate zero-coupling module) —
-> it grew from ~19.4KB → ~20.5KB minified in v0.12.0 (~7.0KB → ~7.3KB
-> gzipped, from the battery feature) and has stayed there since. See the
-> exact, regenerated-on-every-build sizes in the Modules section and
-> Benchmarks below, and CHANGELOG.md for what changed in each release.
+> tuning to `Adaptive`. v0.13.0 added (and v0.14.0 removed —
+> see below) `forcePassiveScrolling()`. **v0.14.0** replaced it with
+> `createAdaptiveScroll()` (a narrower, opt-in adaptive scroll listener,
+> not a global listener patch — see that module's section below);
+> added `zelvior-runtime/privacy` and `zelvior-runtime/cookies`; added
+> `"sideEffects": false` for real bundler tree-shaking (see the new
+> Tree-shaking subsection); and fixed a real, three-times-repeated bug
+> where bare `navigator`/`matchMedia` references silently picked up
+> Node.js's own global `navigator` instead of the page's — see
+> CHANGELOG.md for the full account. Core bundle size is unaffected by
+> v0.13.0/v0.14.0 (`scroll`/`privacy`/`cookies` are all separate
+> zero-coupling modules) — it grew from ~19.4KB → ~20.5KB minified in
+> v0.12.0 (~7.0KB → ~7.3KB gzipped, from the battery feature) and has
+> stayed there since. See the exact, regenerated-on-every-build sizes in
+> the Modules section and Benchmarks below, and CHANGELOG.md for what
+> changed in each release.
 
 > **About `npm WARN Zelvior No description`/`No repository field`/etc.:**
 > if you see these while running `npm install zelvior-runtime`, they are
@@ -113,8 +121,48 @@ None of them are loaded or run unless you import them; none change any
 browser default behavior on their own. `events`/`dom`/`scroll` added in
 v0.5.0; `virtual` added in v0.6.0; `net` added in v0.7.0; `storage`,
 `tier`, `raf`, `idle`, `resize`, `intersect`, `paint` all added in v0.8.0;
-`security` added in v0.11.0. Every module listed above has a detailed
-subsection with real, tested evidence, not just a signature list.
+`security` added in v0.11.0; `privacy`/`cookies` added in v0.14.0. Every
+module listed above has a detailed subsection with real, tested evidence,
+not just a signature list.
+
+### Tree-shaking — importing one function without the rest
+
+Every function documented below is independently importable — you are
+never required to pull in the whole runtime (or even a whole module) to
+use one piece of it:
+
+```js
+// Pulls in ONLY onScroll and its two small internal dependencies
+// (passiveOpts/throttleRaf from events.js) -- nothing else from
+// zelvior-runtime, and nothing from core zelvior.js at all.
+import { onScroll } from 'zelvior-runtime/scroll';
+```
+
+This works two ways, both real and verifiable, not just claimed:
+
+1. **Separate npm export paths.** Each module has its own entry in
+   `package.json`'s `exports` map (`zelvior-runtime/scroll`,
+   `zelvior-runtime/security`, etc. — see the exact list in that file).
+   Importing one never resolves or evaluates any other module's file at
+   all; this isn't a bundler optimization, it's just which file gets
+   loaded.
+2. **`"sideEffects": false`**, added in v0.14.0. This tells bundlers
+   (webpack, Rollup, esbuild, Vite) that every export in this package is
+   safe to drop if unused — including *within* a module, not just between
+   modules. Import one function from a module with several exports (e.g.
+   just `onScroll` from `scroll.js`, which also exports
+   `createAdaptiveScroll`) and a bundler honoring this flag will not
+   include the code for the export you didn't import. This was already
+   architecturally true (every module has been "zero-coupling" since
+   v0.8.0); the flag makes bundlers actually verify and act on it instead
+   of conservatively keeping unused exports around out of caution about
+   side effects they can't rule out.
+
+Verify it yourself: `npm run build` produces separate `.esm.js`/`.cjs`
+files per module (never one that re-exports from another), and running
+any real bundler's tree-shaking analysis against a single-function import
+from this package will show only that function's real dependency chain
+in the output — not the rest of the module, and never core `zelvior.js`.
 
 ### `zelvior-runtime/events`
 
@@ -190,87 +238,137 @@ paints.
 ### `zelvior-runtime/scroll`
 
 ```js
-import { onScroll, forcePassiveScrolling, restorePassiveScrolling, isForcingPassiveScrolling } from 'zelvior-runtime/scroll';
+import { onScroll, createAdaptiveScroll } from 'zelvior-runtime/scroll';
 
 const unsubscribe = onScroll(({ x, y, target }) => { /* ... */ });
-// or: onScroll(myScrollableDiv, (info) => { ... });
-unsubscribe(); // removes the listener and cancels any pending call
+unsubscribe();
+
+const ctrl = createAdaptiveScroll(({ x, y, underPressure, read, write }) => {
+  read(() => { /* measure */ });
+  write(() => { /* mutate */ });
+});
+ctrl.stop();
 ```
 
-**~2.0KB minified / ~0.9KB gzipped** (`scroll.esm.min.js`).
+**~3.2KB minified / ~1.4KB gzipped** (`scroll.esm.min.js`).
 
 | Export | Signature | What it does |
 |---|---|---|
 | `onScroll(fn, opts?)` / `onScroll(target, fn, opts?)` | `(fn: (info) => void, opts?) => unsubscribeFn` | A passive, `requestAnimationFrame`-throttled scroll listener. Built on `events.js`'s `passiveOpts`/`throttleRaf`. Does not modify scrolling itself — only how your own handler is attached and how often it runs. |
-| `forcePassiveScrolling()` | `() => restoreFn` | **Added in v0.13.0.** Monkey-patches `EventTarget.prototype.addEventListener` so `wheel`/`mousewheel`/`touchstart`/`touchmove`/`scroll` listeners registered *after* this call default to `{ passive: true }` unless the caller explicitly set `passive: false`. See the dedicated section below before using this. |
-| `restorePassiveScrolling()` | `() => void` | Undoes `forcePassiveScrolling()`, restoring the original `addEventListener`. Safe to call even if never activated. |
-| `isForcingPassiveScrolling()` | `() => boolean` | Whether the patch is currently active. |
+| `createAdaptiveScroll(fn, opts?)` | `(fn: (info) => void, opts?) => controller` | **Added in v0.14.0**, replacing the removed `forcePassiveScrolling()`. See the dedicated section below. |
 
-**`onScroll` deliberately does not include a custom scrollbar or replace
-native scrolling in any way.** There is no benchmark evidence that native
-scrolling needs replacing, and a custom scrollbar is real CSS/DOM/
-accessibility surface for a browser feature that already performs well —
-adding one without justification is exactly what this project's own
-guidelines caution against.
+**`onScroll`/`createAdaptiveScroll` deliberately do not include a custom
+scrollbar or replace native scrolling in any way.** There is no benchmark
+evidence that native scrolling needs replacing, and a custom scrollbar is
+real CSS/DOM/accessibility surface for a browser feature that already
+performs well — adding one without justification is exactly what this
+project's own guidelines caution against.
 
-#### `forcePassiveScrolling()` — snappier scrolling, in detail
+#### `createAdaptiveScroll()` — smoother scrolling on weak hardware, in detail
 
-**What it actually fixes:** the single biggest real cause of "sticky" or
-janky scrolling that a page's *own* code isn't responsible for — other
-scripts on the page (ad tags, analytics beacons, third-party embeds/
-widgets) registering `wheel`/`touchstart`/`touchmove`/`scroll` listeners
-without `{ passive: true }`. A non-passive listener forces the browser to
-wait for that listener to finish running before it's allowed to scroll —
-on every single event, whether or not the listener ever calls
-`preventDefault()`. This is standard, well-documented browser behavior
-(it's the entire reason the `passive` option exists), not a claim unique
-to this runtime. Native compositor-driven scrolling itself is not being
-replaced or reimplemented here — it's already about as fast as it gets;
-this only removes what's blocking it.
+**Read this first:** native compositor-driven scrolling is already about
+as fast as it gets. This does not make the browser scroll faster, replace
+it, or add any smoothing/momentum of its own — reimplementing scroll
+physics on the main thread would be *slower* than the browser's native
+implementation, not faster. What this function actually addresses, and
+nothing more:
+
+1. A non-passive scroll/touch listener blocking the compositor.
+2. A scroll handler doing real work more than once per frame, or
+   interleaving DOM reads and writes so the browser is forced into
+   synchronous layout mid-scroll.
+3. Scroll-driven work continuing at full workload even when the device
+   is visibly struggling (dropped frames, long tasks already piling up)
+   or the user has asked for reduced motion.
 
 ```js
-import { forcePassiveScrolling } from 'zelvior-runtime/scroll';
+import { createAdaptiveScroll } from 'zelvior-runtime/scroll';
 
-// Call this as early as possible (before third-party scripts attach
-// their own listeners) for it to have any effect on them.
-const restore = forcePassiveScrolling();
+const ctrl = createAdaptiveScroll(({ x, y, lowEndDevice, reducedMotion, underPressure, read, write }) => {
+  read(() => { /* e.g. el.getBoundingClientRect() */ });
+  write(() => { /* e.g. el.style.transform = ... */ });
+}, {
+  target: window,       // or a specific scrollable element
+  settleMs: 150,        // how long after the last scroll event before going idle
+  reducedMotionAware: true,
+  longTaskAware: true,
+});
 
-// later, if you need the original behavior back:
-restore(); // or restorePassiveScrolling()
+ctrl.stop();              // removes listeners, cancels pending work, disconnects the observer
+ctrl.isIdle();             // true once scrolling has settled and nothing is scheduled
+ctrl.isLowEndDevice();      // computed once at creation
+ctrl.isReducedMotion();     // computed once at creation
 ```
 
-**Real trade-off, stated as plainly as `Z.lite`'s — read this before
-using it:** forcing `passive: true` on a listener that calls
-`event.preventDefault()` does not throw. Browsers silently ignore the
-`preventDefault()` call and log a console warning instead. Any legitimate
-custom-scroll widget, drag-to-reorder list, or touch-gesture handler that
-depends on actually blocking the default scroll/touch action **will stop
-being able to do that** while this is active. This is exactly why it's a
-function you call, not a default — same reasoning as `Z.lite`.
+**What it does, precisely:**
+- Registers its scroll and touchmove listeners as passive, always — it
+  never calls `preventDefault()`, so there's no reason not to, and doing
+  so lets the browser begin scrolling without waiting on this listener.
+- Schedules **at most one** `requestAnimationFrame` per real scroll burst
+  — however many `scroll` events fire before the next frame, `fn` runs
+  once for that frame, not once per event.
+- Runs **zero permanent loop.** There is no `setInterval` anywhere in
+  this function. A frame is only ever requested in direct response to a
+  real `scroll` event, and once scrolling settles (`settleMs`, default
+  150ms, since the last event) nothing further is scheduled — an idle
+  page with this active costs nothing beyond one passive listener sitting
+  there.
+- Ships its own tiny, local FastDOM-style read/write separation
+  (`info.read(fn)`/`info.write(fn)`) so reads always run before writes
+  within the same already-scheduled frame — deliberately **not** achieved
+  by importing `zelvior-runtime/paint`, to keep this module fully
+  self-contained.
+- Detects long tasks via a local `PerformanceObserver('longtask')`
+  (feature-detected — simply stays inert on engines without the entry
+  type, like Safari) and a low-end device via `navigator.hardwareConcurrency`/
+  `deviceMemory` (read directly, the same signals `zelvior-runtime/tier`
+  uses, **not** by importing `tier` — this module pulls in nothing else
+  from the package).
+- Under sustained pressure (2+ recent long tasks, a low-end device, or
+  `prefers-reduced-motion`), throttles `fn` to every other frame instead
+  of every frame — still responsive, roughly half the scroll-time work.
+  Position tracking itself is never skipped, only the consumer callback.
 
-**Real, tested evidence** (`test/modules.test.mjs`, 5 tests): a spy
-installed in front of `EventTarget.prototype.addEventListener` *before*
-calling `forcePassiveScrolling()` — so the spy observes the exact
-transformed options a real DOM implementation would receive, not a mock
-of the feature's intent. Confirms an options-less `wheel` listener gets
-`{ passive: true }`; confirms an existing `{ capture: true }` object gets
-`passive` added without losing `capture`; confirms an explicit
-`passive: false` is respected and not overridden; confirms `click` (a
-non-scroll-blocking type) passes through completely unmodified; confirms
-`restorePassiveScrolling()` returns the *exact original function
-reference*, not just an equivalent-behaving one; confirms calling
-`forcePassiveScrolling()` twice doesn't double-wrap.
+**Why it replaced Snappy Scrolling (`forcePassiveScrolling`):** that
+function worked by monkey-patching `EventTarget.prototype.addEventListener`
+globally, forcing `passive: true` onto every listener on the page whether
+or not it wanted to be forced — a real, working technique, but a blunt
+one that could silently break any legitimate `preventDefault()`-dependent
+widget site-wide with no way for that widget's own code to know why.
+`createAdaptiveScroll` is a narrower, opt-in *listener* for code that
+wants it, not a patch applied to everything else — it cannot break an
+unrelated widget's `passive: false` listener because it never touches
+`EventTarget.prototype` at all (confirmed by a dedicated test).
 
-**Browser compatibility:** `EventTarget.prototype.addEventListener`
-patching relies on `Window`/`Document`/`Element` sharing that prototype —
-confirmed true in jsdom (used for the tests above) and in every modern
-evergreen browser; very old engines that implement each DOM interface
-independently rather than through a shared `EventTarget` prototype (rare,
-pre-2015-era) would not be affected by the patch, which fails safe (the
-patch simply has no effect, rather than breaking anything).
+**Real, tested evidence** (`test/modules.test.mjs`, 9 tests): passive
+listener registration; exactly one callback per animation frame across
+20 rapid scroll events; goes fully idle (`isIdle()`) after scrolling
+settles with nothing left running; `stop()` cancels in-flight scheduled
+work, not just future events; `prefers-reduced-motion` throttling
+(mocked `matchMedia`, since jsdom doesn't implement it); low-end-device
+detection **and** its correct absence on a normal device (jsdom's own
+`navigator.hardwareConcurrency` defaults to `1` — confirmed by direct
+inspection — so the "normal device" test explicitly overrides it,
+otherwise it would be testing the throttling path by accident); no
+interference whatsoever with an unrelated explicit `passive: false`
+listener; read-before-write ordering.
 
-**Browser compatibility (onScroll):** works everywhere `addEventListener`
-exists; inherits `events.js`'s passive/rAF fallbacks.
+**A footgun found and fixed while building this:** this module (and
+`privacy.js`) initially referenced the bare `navigator`/`matchMedia`
+identifiers instead of `window.navigator`/`window.matchMedia`. Node.js
+itself provides a global `navigator` (since Node 21) that silently
+answers instead of throwing — with `hardwareConcurrency: 1`, exactly the
+low-end-device threshold — so every test using the bare form was silently
+exercising the "weak device" code path by accident, no matter what it
+was actually trying to test. Fixed throughout; this codebase's
+established convention (`win.matchMedia` in `zelvior.js`) turned out to
+be the right call for reasons beyond style.
+
+**Browser compatibility:** works everywhere `addEventListener` and
+`requestAnimationFrame` exist (i.e. everywhere). `PerformanceObserver`
+with `'longtask'` support is Chromium-only today — its absence doesn't
+break anything, it just means the throttling never escalates beyond
+low-end-device/reduced-motion triggers on other engines.
 
 ### `zelvior-runtime/virtual`
 
@@ -527,6 +625,96 @@ immediately instead of batching it, and that's the single biggest
 self-inflicted perf cost on low-end devices, where a reflow is far more
 expensive per pixel than on fast hardware.
 
+### `zelvior-runtime/privacy`
+
+```js
+import {
+  sendDoNotSellSignal, isDoNotSellSignalActive,
+  blockPopups, restorePopups, allowPopupsFrom, isBlockingPopups,
+  removeMetaRefresh,
+  enableStealthMode, disableStealthMode, isStealthModeActive,
+  metrics,
+} from 'zelvior-runtime/privacy';
+```
+
+**~2.9KB minified / ~1.2KB gzipped** (`privacy.esm.min.js`). Added in v0.14.0.
+
+**Read this before using any of it.** A JS module cannot block third-party
+ad/tracker *network requests* (that needs a browser extension's
+`declarativeNetRequest`, not page JS — the zelvior-extension does this
+separately, with its own compact filter list); it cannot reliably stop a
+page from navigating itself away via `window.location = url` (browsers
+don't allow scripts to veto that assignment); and "stealth mode" reduces
+specific fingerprinting vectors, it does not make a browser untraceable.
+Every function below is scoped to what's actually achievable from JS.
+
+| Export | Signature | What it does |
+|---|---|---|
+| `sendDoNotSellSignal()` | `() => boolean` | Sets `navigator.globalPrivacyControl = true` — the real, legally-recognized signal under California's CCPA/CPRA (and several other US state privacy laws) that a site must treat as a valid opt-out of sale/sharing when it reads that property. This is the actual mechanism the law defines, not a symbolic gesture — but it doesn't and can't force a site's *compliance*, which is a legal guarantee, not a technical one. Also sets the older, non-binding `navigator.doNotTrack`. |
+| `isDoNotSellSignalActive()` | `() => boolean` | Reads the current state back. |
+| `blockPopups(opts?)` | `(opts?: { onBlocked?: (info) => void }) => void` | Blocks `window.open()` calls not tied to a genuine user gesture, via the real `navigator.userActivation.isActive` API — not a heuristic. **Fails open** (allows the popup) on engines without that API, deliberately, so it never silently breaks a legitimate `window.open()` call it can't verify either way. |
+| `restorePopups()` | `() => void` | Restores the original `window.open`. |
+| `allowPopupsFrom(origin)` | `(origin: string) => void` | Allowlists a specific origin so its popups open even without a detected gesture. |
+| `isBlockingPopups()` | `() => boolean` | Whether blocking is currently active. |
+| `removeMetaRefresh(root?)` | `(root?: Document) => number` | Removes `<meta http-equiv="refresh">` redirect tags before the browser acts on them. Must be called before the browser's own refresh timer fires — as early as possible in page load. Returns the count removed. |
+| `enableStealthMode()` / `disableStealthMode()` / `isStealthModeActive()` | `() => void` / `() => void` / `() => boolean` | Real trade-offs, same honesty standard as `Z.lite` — **breaks legitimate use of both APIs it touches.** Canvas: `toDataURL()`/`getImageData()` return imperceptibly noised pixel data (breaks image editors, QR/barcode readers using canvas). WebRTC: forces `iceTransportPolicy: 'relay'` on every `RTCPeerConnection`, which is the actual fix for the local-IP-leak fingerprinting vector, but **breaks legitimate video/audio calls**, which need those candidates to connect at all. |
+| `metrics()` | `() => { popupsBlocked, metaRefreshRemoved, fingerprintCallsBlocked }` | Real counts of what this module has actually done, not simulated numbers. |
+
+**Real, tested evidence** (`test/privacy.test.mjs`, 8 tests): GPC signal
+round-trip; popup blocking's fail-open default confirmed explicitly
+(no `navigator.userActivation` → allowed, matching real old-Firefox/
+Safari behavior, not jsdom's gap); popup blocking *with* a mocked
+no-gesture `userActivation` confirmed to actually block and return `null`
+(matching what real browser popup blockers return); origin allowlisting;
+`restorePopups()` restores the exact original reference; meta-refresh
+removal confirmed to leave unrelated `<meta>` tags untouched; stealth
+mode's canvas/WebRTC wrapping confirmed via mocked stand-ins (jsdom
+implements neither API at all) to actually call through to the real
+implementation and count real invocations, including that
+`iceTransportPolicy` is genuinely forced to `'relay'`.
+
+### `zelvior-runtime/cookies`
+
+```js
+import { autoRejectCookieBanners, metrics } from 'zelvior-runtime/cookies';
+
+const ctrl = autoRejectCookieBanners({
+  timeout: 6000,
+  onHandled: (vendor) => console.log('handled:', vendor),
+});
+ctrl.stop();
+```
+
+**~2.1KB minified / ~1.1KB gzipped** (`cookies.esm.min.js`). Added in v0.14.0.
+
+**This is explicitly not a comprehensive solution.** Cookie banners are
+built by dozens of vendors plus countless custom implementations; there
+is no reliable general-case detection without either a large,
+constantly-updated selector database or actually parsing the IAB TCF API.
+This module recognizes a small, deliberately curated set of real-world
+patterns and does nothing on anything it doesn't recognize — it never
+guesses or clicks blindly.
+
+| Export | Signature | What it does |
+|---|---|---|
+| `autoRejectCookieBanners(opts?)` | `(opts?: { timeout?: number; onHandled?: (vendor: string) => void }) => { stop(): void }` | Watches for one of the recognized patterns (currently: OneTrust, Cookiebot, Quantcast Choice/IAB TCF, Didomi, plus a conservative generic fallback requiring both a cookie/consent-hinting container *and* reject-leaning button text) and clicks the reject/necessary-only option as soon as it appears, via an immediate check plus a `MutationObserver` for banners injected after load, for up to `timeout` ms (default 6000). Stops scanning the instant it handles one. |
+| `metrics()` | `() => { handledCount, lastHandledVendor }` | Real counts, not simulated. |
+
+**Real, tested evidence** (`test/cookies.test.mjs`, 7 tests): OneTrust and
+Cookiebot's real selectors clicked correctly; the generic fallback
+confirmed to require *both* conditions (a decline button with no
+cookie-hinting container is correctly left alone, avoiding a false
+positive on an unrelated "no thanks" button elsewhere on a page); a
+banner injected after initial page load (the common real-world case,
+simulating a CMP script that runs a moment after the page itself)
+correctly detected via the `MutationObserver` path, not just the initial
+HTML; `stop()` correctly prevents any further handling. **A real bug
+found by these tests, not a hypothetical:** the initial synchronous check
+and an already-in-flight polling cycle could both run before the first
+one's own cleanup took effect, double-clicking an already-handled banner
+— fixed with an explicit `found` guard checked at the top of every scan,
+independent of the cleanup-in-progress state.
+
 ## Subsystems
 
 - `Zelvior.scheduler` — priority task queue (`add`, `addIdle`, `nextFrame`, `whenIdle`, `clear`, `pending`)
@@ -674,8 +862,10 @@ produce this release — not estimated, not from an old build. Run
 | `zelvior.esm.min.js` (core, ESM) | 20,297B (~19.8KB) | 7,204B (~7.0KB) |
 | `zelvior.legacy.min.js` (core, es5) | 21,272B (~20.8KB) | 7,532B (~7.4KB) |
 | `storage.esm.min.js` | 5,866B | 1,835B |
-| `scroll.esm.min.js` | 1,958B | 883B |
+| `scroll.esm.min.js` | 3,212B | 1,361B |
 | `security.esm.min.js` | 2,416B | 1,222B |
+| `privacy.esm.min.js` | 2,901B | 1,172B |
+| `cookies.esm.min.js` | 2,114B | 1,079B |
 | `net.esm.min.js` | — | — see `BUNDLE_SIZES.md` |
 | `tier.esm.min.js` | 966B | 581B |
 | `raf.esm.min.js` | 655B | 411B |
@@ -702,7 +892,7 @@ needed.
 
 ```bash
 npm install    # pulls in the dev dependencies (jsdom, eslint, prettier, playwright)
-npm test       # runs test/*.test.mjs (basic, modules, net, security, storage, virtual) via Node's built-in test runner
+npm test       # runs test/*.test.mjs (basic, cookies, modules, net, privacy, security, storage, virtual) via Node's built-in test runner
 npm run bench  # runs the Z.lite DOM-walk benchmark shown above, against the built dist/zelvior.js
 ```
 
@@ -725,13 +915,13 @@ npm run test:coverage   # node --test --experimental-test-coverage
 
 Measured, current result (regenerate with the command above — this
 number moves as modules/tests are added, so treat it as a snapshot, not a
-permanent claim): **91.39% line / 84.76% branch / 90.26% function**
-overall across the `.cjs` module builds and their test files (`dom`,
-`events`, `net`, `scroll`, `security`, `storage`, `virtual`). Per-file,
-this ranges from 100% (`net.cjs`) down to 51.73% line coverage on
-`storage.cjs` — the latter because `test/storage.test.mjs` only exercises
-the `local` backend (jsdom has no IndexedDB) and a subset of
-`createEncryptedStore`'s paths, leaving the `idb`/`auto` backend
+permanent claim): **92.67% line / 84.80% branch / 90.75% function**
+overall across the `.cjs` module builds and their test files (`cookies`,
+`dom`, `events`, `net`, `privacy`, `scroll`, `security`, `storage`,
+`virtual`). Per-file, this ranges from 100% (`net.cjs`) down to 51.73%
+line coverage on `storage.cjs` — the latter because `test/storage.test.mjs`
+only exercises the `local` backend (jsdom has no IndexedDB) and a subset
+of `createEncryptedStore`'s paths, leaving the `idb`/`auto` backend
 functions themselves uncovered by this suite; see that module's README
 section for the honest gap. Be precise about what the aggregate number
 does and doesn't cover: `test/basic.test.mjs` and `test/modules.test.mjs`
@@ -739,7 +929,7 @@ load the core `dist/zelvior.js` via `window.eval(source)` against a raw
 string — which is how the suite exercises the real built artifact rather
 than an un-bundled mock, but it also means Node's coverage instrumentation
 (which hooks module loading) can't see inside that eval'd code at all. The
-72 passing tests are real evidence the core runtime and every module
+92 passing tests are real evidence the core runtime and every module
 works; the coverage percentage above is real evidence about the specific
 `.cjs` modules it can actually instrument, not a claim about `zelvior.js`'s
 internals or full coverage of every module's every path.

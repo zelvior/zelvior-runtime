@@ -249,37 +249,7 @@ test('scroll: repeated subscribe/unsubscribe cycles do not accumulate listeners'
   teardown();
 });
 
-test('scroll: forcePassiveScrolling() defaults an options-less wheel listener to passive:true', () => {
-  setup();
-  const scrollMod = require(path.join(distDir, 'scroll.cjs'));
-  const captured = [];
-  // Install a spy in place of the real addEventListener BEFORE calling
-  // forcePassiveScrolling() -- the module saves whatever
-  // EventTarget.prototype.addEventListener currently is at call time and
-  // wraps it, so this spy receives the *transformed* options exactly as
-  // the real DOM implementation would.
-  const original = window.EventTarget.prototype.addEventListener;
-  window.EventTarget.prototype.addEventListener = function (type, listener, options) {
-    captured.push({ type, options });
-    return original.call(this, type, listener, options);
-  };
-
-  const restoreFn = scrollMod.forcePassiveScrolling();
-  const noop = () => {};
-  window.addEventListener('wheel', noop); // no options at all -- the common real-world case
-  document.addEventListener('touchmove', noop, { capture: true }); // options object, no passive key
-
-  assert.equal(captured[0].type, 'wheel');
-  assert.deepEqual(captured[0].options, { passive: true });
-  assert.equal(captured[1].type, 'touchmove');
-  assert.deepEqual(captured[1].options, { capture: true, passive: true }, 'existing options (capture) must be preserved, not clobbered');
-
-  restoreFn();
-  window.EventTarget.prototype.addEventListener = original;
-  teardown();
-});
-
-test('scroll: forcePassiveScrolling() respects an explicit passive:false and does not override it', () => {
+test('scroll: createAdaptiveScroll registers passive scroll and touchmove listeners', () => {
   setup();
   const scrollMod = require(path.join(distDir, 'scroll.cjs'));
   const captured = [];
@@ -289,58 +259,169 @@ test('scroll: forcePassiveScrolling() respects an explicit passive:false and doe
     return original.call(this, type, listener, options);
   };
 
-  const restoreFn = scrollMod.forcePassiveScrolling();
-  window.addEventListener('touchstart', () => {}, { passive: false });
-  assert.deepEqual(captured[0].options, { passive: false }, 'an explicit passive:false opt-out must be respected, not silently forced to true');
+  const ctrl = scrollMod.createAdaptiveScroll(() => {});
+  const scrollCall = captured.find((c) => c.type === 'scroll');
+  const touchCall = captured.find((c) => c.type === 'touchmove');
+  assert.ok(scrollCall && scrollCall.options && scrollCall.options.passive === true, 'the scroll listener must be passive');
+  assert.ok(touchCall && touchCall.options && touchCall.options.passive === true, 'the touchmove listener must be passive');
 
-  restoreFn();
+  ctrl.stop();
   window.EventTarget.prototype.addEventListener = original;
   teardown();
 });
 
-test('scroll: forcePassiveScrolling() leaves non-scroll-related event types alone', () => {
+test('scroll: createAdaptiveScroll schedules only one update per animation frame, even for many scroll events in that frame', async () => {
+  setup();
+  // jsdom's own navigator.hardwareConcurrency defaults to 1 (confirmed by
+  // direct inspection) -- a real single-core-sim default that would
+  // trigger this module's own low-end-device throttling and turn this
+  // into a test of THAT behavior instead of per-frame batching, which is
+  // what this test is actually about. Set a normal core count so only
+  // the thing under test varies.
+  Object.defineProperty(window.navigator, 'hardwareConcurrency', { value: 8, configurable: true });
+  const scrollMod = require(path.join(distDir, 'scroll.cjs'));
+  let calls = 0;
+  const ctrl = scrollMod.createAdaptiveScroll(() => { calls++; });
+
+  // Fire the scroll event repeatedly within the same tick, the way a
+  // real fast-scrolling trackpad/wheel can -- rAF only fires once per
+  // real frame no matter how many scroll events preceded it.
+  for (let i = 0; i < 20; i++) window.dispatchEvent(new window.Event('scroll'));
+  await new Promise((r) => setTimeout(r, 50)); // let the single rAF settle
+
+  assert.equal(calls, 1, '20 scroll events in one tick must still only produce one callback invocation');
+  ctrl.stop();
+  teardown();
+});
+
+test('scroll: createAdaptiveScroll runs no permanent loop while idle -- goes idle after scrolling settles, with nothing left pending', async () => {
   setup();
   const scrollMod = require(path.join(distDir, 'scroll.cjs'));
-  const captured = [];
-  const original = window.EventTarget.prototype.addEventListener;
-  window.EventTarget.prototype.addEventListener = function (type, listener, options) {
-    captured.push({ type, options });
-    return original.call(this, type, listener, options);
-  };
+  const ctrl = scrollMod.createAdaptiveScroll(() => {}, { settleMs: 30 });
 
-  const restoreFn = scrollMod.forcePassiveScrolling();
-  window.addEventListener('click', () => {});
-  assert.equal(captured[0].options, undefined, 'click is not a scroll-blocking event type and must be passed through unmodified');
-
-  restoreFn();
-  window.EventTarget.prototype.addEventListener = original;
+  assert.equal(ctrl.isIdle(), true, 'before any scroll event, nothing should be scheduled');
+  window.dispatchEvent(new window.Event('scroll'));
+  assert.equal(ctrl.isIdle(), false, 'immediately after a scroll event, a frame/settle timer should be pending');
+  await new Promise((r) => setTimeout(r, 80)); // past both the rAF and the settle window
+  assert.equal(ctrl.isIdle(), true, 'after scrolling stops, this must return to fully idle -- no timer/rAF left running');
+  ctrl.stop();
   teardown();
 });
 
-test('scroll: restorePassiveScrolling() actually restores the original addEventListener, and isForcingPassiveScrolling() reflects real state', () => {
+test('scroll: createAdaptiveScroll cleanup -- stop() removes listeners and cancels pending work, and further scroll events do nothing', async () => {
+  setup();
+  const scrollMod = require(path.join(distDir, 'scroll.cjs'));
+  let calls = 0;
+  const ctrl = scrollMod.createAdaptiveScroll(() => { calls++; });
+  window.dispatchEvent(new window.Event('scroll'));
+  ctrl.stop(); // stop before the rAF this scroll event scheduled has a chance to fire
+  await new Promise((r) => setTimeout(r, 50));
+  assert.equal(calls, 0, 'stop() must cancel the in-flight scheduled frame, not just future ones');
+
+  window.dispatchEvent(new window.Event('scroll'));
+  await new Promise((r) => setTimeout(r, 50));
+  assert.equal(calls, 0, 'after stop(), the listener must be fully removed -- further scroll events must do nothing at all');
+  teardown();
+});
+
+test('scroll: createAdaptiveScroll respects prefers-reduced-motion by reporting it and throttling to every other frame', async () => {
+  setup();
+  const originalMatchMedia = window.matchMedia;
+  window.matchMedia = (q) => ({ matches: q.includes('prefers-reduced-motion') });
+  const scrollMod = require(path.join(distDir, 'scroll.cjs'));
+
+  const seenFlags = [];
+  const ctrl = scrollMod.createAdaptiveScroll((info) => { seenFlags.push(info.reducedMotion); });
+  assert.equal(ctrl.isReducedMotion(), true);
+
+  // Fire several separate scroll+settle cycles; under reduced-motion the
+  // callback is throttled to every other frame, so it should not fire on
+  // every single one of several distinct scroll bursts.
+  for (let i = 0; i < 4; i++) {
+    window.dispatchEvent(new window.Event('scroll'));
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  assert.ok(seenFlags.length < 4, 'reduced-motion throttling should skip some frames rather than firing on every single scroll burst');
+  if (seenFlags.length) assert.equal(seenFlags[0], true, 'when it does fire, it must report reducedMotion accurately');
+
+  ctrl.stop();
+  window.matchMedia = originalMatchMedia;
+  teardown();
+});
+
+test('scroll: createAdaptiveScroll detects a low-end device from navigator.hardwareConcurrency/deviceMemory and reports it', () => {
+  setup();
+  Object.defineProperty(window.navigator, 'hardwareConcurrency', { value: 2, configurable: true });
+  const scrollMod = require(path.join(distDir, 'scroll.cjs'));
+  const ctrl = scrollMod.createAdaptiveScroll(() => {});
+  assert.equal(ctrl.isLowEndDevice(), true);
+  ctrl.stop();
+  teardown();
+});
+
+test('scroll: createAdaptiveScroll does not throttle on a normal device with no reduced-motion and no long-task pressure', async () => {
+  setup();
+  Object.defineProperty(window.navigator, 'hardwareConcurrency', { value: 8, configurable: true });
+  const scrollMod = require(path.join(distDir, 'scroll.cjs'));
+  let calls = 0;
+  const ctrl = scrollMod.createAdaptiveScroll(() => { calls++; });
+  assert.equal(ctrl.isLowEndDevice(), false);
+
+  for (let i = 0; i < 3; i++) {
+    window.dispatchEvent(new window.Event('scroll'));
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  assert.equal(calls, 3, 'on a healthy device under no pressure, every scroll burst should get a callback, not every other one');
+  ctrl.stop();
+  teardown();
+});
+
+test('scroll: createAdaptiveScroll never touches EventTarget.prototype.addEventListener globally -- unrelated explicit passive:false listeners on the page are completely unaffected', () => {
   setup();
   const scrollMod = require(path.join(distDir, 'scroll.cjs'));
   const originalAEL = window.EventTarget.prototype.addEventListener;
 
-  assert.equal(scrollMod.isForcingPassiveScrolling(), false);
-  scrollMod.forcePassiveScrolling();
-  assert.equal(scrollMod.isForcingPassiveScrolling(), true);
-  assert.notEqual(window.EventTarget.prototype.addEventListener, originalAEL, 'addEventListener should actually be a different (wrapping) function while active');
+  const ctrl = scrollMod.createAdaptiveScroll(() => {});
+  assert.equal(window.EventTarget.prototype.addEventListener, originalAEL, 'this feature must not monkey-patch addEventListener at all -- it only adds its own listeners');
 
-  scrollMod.restorePassiveScrolling();
-  assert.equal(scrollMod.isForcingPassiveScrolling(), false);
-  assert.equal(window.EventTarget.prototype.addEventListener, originalAEL, 'the exact original function reference should be restored, not a new equivalent one');
+  const captured = [];
+  const spy = function (type, listener, options) { captured.push({ type, options }); return originalAEL.call(this, type, listener, options); };
+  window.EventTarget.prototype.addEventListener = spy;
+  window.addEventListener('touchstart', () => {}, { passive: false });
+  assert.deepEqual(captured[0].options, { passive: false }, 'an unrelated listener explicitly requesting passive:false must be completely untouched');
+  window.EventTarget.prototype.addEventListener = originalAEL;
 
+  ctrl.stop();
   teardown();
 });
 
-test('scroll: forcePassiveScrolling() is idempotent -- calling it twice does not double-wrap addEventListener', () => {
+test('scroll: createAdaptiveScroll accepts read()/write() from within the callback and runs all reads before any writes, in the same frame', async () => {
+  setup();
+  Object.defineProperty(window.navigator, 'hardwareConcurrency', { value: 8, configurable: true }); // isolate from low-end throttling, same reasoning as above
+  const scrollMod = require(path.join(distDir, 'scroll.cjs'));
+  const order = [];
+  const ctrl = scrollMod.createAdaptiveScroll((info) => {
+    info.write(() => order.push('write'));
+    info.read(() => order.push('read'));
+  });
+  window.dispatchEvent(new window.Event('scroll'));
+  await new Promise((r) => setTimeout(r, 50));
+  assert.deepEqual(order, ['read', 'write'], 'reads must run before writes regardless of the order they were queued in, to avoid forced synchronous layout');
+  ctrl.stop();
+  teardown();
+});
+
+test('scroll: onScroll (the pre-existing API) is unaffected by the Adaptive Native Scroll addition -- still exported, still works the same way', async () => {
   setup();
   const scrollMod = require(path.join(distDir, 'scroll.cjs'));
-  scrollMod.forcePassiveScrolling();
-  const wrapped = window.EventTarget.prototype.addEventListener;
-  scrollMod.forcePassiveScrolling();
-  assert.equal(window.EventTarget.prototype.addEventListener, wrapped, 'a second call while already active must not wrap the already-wrapped function again');
-  scrollMod.restorePassiveScrolling();
+  assert.equal(typeof scrollMod.onScroll, 'function');
+  assert.equal(scrollMod.forcePassiveScrolling, undefined, 'the removed Snappy Scroll API must actually be gone, not just undocumented');
+
+  let received = null;
+  const unsubscribe = scrollMod.onScroll((info) => { received = info; });
+  window.dispatchEvent(new window.Event('scroll'));
+  await new Promise((r) => setTimeout(r, 50));
+  assert.ok(received && typeof received.x === 'number' && typeof received.y === 'number');
+  unsubscribe();
   teardown();
 });

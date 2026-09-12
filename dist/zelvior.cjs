@@ -31,7 +31,7 @@ __export(zelvior_exports, {
   default: () => zelvior_default
 });
 module.exports = __toCommonJS(zelvior_exports);
-var Z = { version: "0.13.0" };
+var Z = { version: "0.14.0" };
 var enabled = false;
 var doc = document;
 var win = window;

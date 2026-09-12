@@ -14,6 +14,29 @@ export function onScroll(
   opts?: { capture?: boolean }
 ): () => void;
 
-export function forcePassiveScrolling(): () => void;
-export function restorePassiveScrolling(): void;
-export function isForcingPassiveScrolling(): boolean;
+export interface AdaptiveScrollInfo {
+  x: number;
+  y: number;
+  target: EventTarget;
+  lowEndDevice: boolean;
+  reducedMotion: boolean;
+  underPressure: boolean;
+  read(fn: () => void): void;
+  write(fn: () => void): void;
+}
+export interface AdaptiveScrollController {
+  stop(): void;
+  isIdle(): boolean;
+  isLowEndDevice(): boolean;
+  isReducedMotion(): boolean;
+}
+export function createAdaptiveScroll(
+  fn: (info: AdaptiveScrollInfo) => void,
+  opts?: {
+    target?: EventTarget;
+    capture?: boolean;
+    settleMs?: number;
+    reducedMotionAware?: boolean;
+    longTaskAware?: boolean;
+  }
+): AdaptiveScrollController;

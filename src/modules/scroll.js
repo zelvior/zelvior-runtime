@@ -1,6 +1,6 @@
 // zelvior-runtime/scroll -- lightweight scroll event helper, plus an
-// opt-in forced-passive-listener mode for removing third-party-caused
-// scroll jank. ESM source of truth; bundled by build.mjs.
+// opt-in adaptive scroll monitor for feeling smoother/less sticky on
+// weak hardware. ESM source of truth; bundled by build.mjs.
 //
 // `onScroll` intentionally does NOT include a custom scrollbar or replace
 // native scrolling in any way. There is no benchmark evidence that native
@@ -9,9 +9,9 @@
 // feature that already performs well. What genuinely has a measurable cost
 // is *listening* to scroll carelessly (a non-passive listener blocks the
 // compositor from scrolling ahead of the main thread; an unthrottled
-// handler can run far more often than once per frame) -- so that's what
-// `onScroll` addresses for your own listeners, and `forcePassiveScrolling`
-// (below) addresses for every *other* script's listeners too.
+// handler can run far more often than once per frame, and mixing DOM reads
+// with writes forces synchronous layout) -- so that's what both `onScroll`
+// and `createAdaptiveScroll` (below) address.
 
 import { passiveOpts, throttleRaf } from './events.js';
 
@@ -46,81 +46,165 @@ export function onScroll(target, fn, opts) {
   };
 }
 
-// --- Snappy scrolling (forced passive listeners) -------------------------
-// The single biggest real cause of "sticky"/laggy scrolling that isn't
-// under your control: OTHER scripts on the page (ad tags, analytics,
-// third-party widgets) registering non-passive `wheel`/`touchstart`/
-// `touchmove`/`scroll` listeners. A non-passive listener forces the
-// browser to block compositor scrolling until that listener returns,
-// every single event, even if it never calls `preventDefault()` -- this
-// is well-documented browser behavior (it's *why* the passive option
-// exists at all), not a claim unique to this runtime.
+// --- Adaptive Native Scroll ------------------------------------------------
 //
-// This module cannot rewrite scroll physics or make the browser's own
-// compositor faster -- that's already about as fast as it gets natively.
-// What it *can* do is stop other code on the page from blocking it.
+// Read this before using it: native compositor-driven scrolling is
+// already about as fast as it gets. This does not make the browser's own
+// scrolling faster, replace it, or add any smoothing/momentum of its own
+// -- doing that would mean re-implementing scroll physics on the main
+// thread, which is slower than the browser's native implementation, not
+// faster. What genuinely causes scrolling to *feel* sticky or janky on
+// weak hardware, and is actually addressable from JS:
 //
-// REAL TRADE-OFF, stated as plainly as Z.lite's: forcing `passive: true`
-// on a listener that calls `event.preventDefault()` does not throw --
-// browsers silently ignore the `preventDefault()` call and log a console
-// warning instead. Any legitimate custom-scroll widget, drag-to-reorder
-// list, or touch-gesture handler that depends on actually blocking the
-// default scroll/touch action will stop being able to do that while this
-// is active. This is why it is a function you call, not a default.
-var patchedAEL = null; // the original addEventListener, while patched
-var FORCE_PASSIVE_TYPES = { wheel: 1, mousewheel: 1, touchstart: 1, touchmove: 1, scroll: 1 };
+//   1. A non-passive scroll/touch listener blocking the compositor.
+//   2. A scroll handler doing real work (DOM reads/writes) more than
+//      once per frame, or interleaving reads and writes so the browser
+//      is forced into synchronous layout mid-scroll.
+//   3. Scroll-driven work continuing to run its full workload even when
+//      the device is visibly struggling (dropped frames / long tasks
+//      already happening) or the user has asked for reduced motion.
+//
+// `createAdaptiveScroll` addresses exactly those three things, and
+// nothing else. It is entirely event-driven: there is no
+// `setInterval`/permanent polling loop anywhere in this function. A
+// `requestAnimationFrame` is only ever requested in direct response to a
+// real `scroll` event, and the chain stops the moment scrolling settles
+// -- an idle page with this active costs nothing beyond one passive
+// listener sitting there.
+export function createAdaptiveScroll(fn, opts) {
+  opts = opts || {};
+  var target = opts.target || window;
+  var capture = !!opts.capture;
+  var settleMs = typeof opts.settleMs === 'number' ? opts.settleMs : 150;
 
-/**
- * Monkey-patches `EventTarget.prototype.addEventListener` so that any
- * `wheel`/`mousewheel`/`touchstart`/`touchmove`/`scroll` listener
- * registered *after* this call defaults to `{ passive: true }` unless the
- * caller explicitly passed `passive: false`. Existing listeners
- * registered before this call are unaffected (there is no way to alter an
- * already-registered listener's passive flag). Returns a function that
- * restores the original `addEventListener`.
- *
- * Idempotent: calling this while already active is a no-op and returns
- * the same restore function.
- */
-export function forcePassiveScrolling() {
-  if (patchedAEL) return restore;
-  patchedAEL = EventTarget.prototype.addEventListener;
-  EventTarget.prototype.addEventListener = function (type, listener, options) {
-    if (FORCE_PASSIVE_TYPES[type]) {
-      if (options === undefined || options === null) {
-        options = { passive: true };
-      } else if (typeof options === 'boolean') {
-        options = { capture: options, passive: true };
-      } else if (options.passive === undefined) {
-        // Caller specified other options (capture, once, signal) but no
-        // explicit passive preference -- default to passive, but keep
-        // every option they did set.
-        var merged = {};
-        for (var k in options) if (Object.prototype.hasOwnProperty.call(options, k)) merged[k] = options[k];
-        merged.passive = true;
-        options = merged;
+  // Device-capability signal, computed once, self-contained -- this
+  // module deliberately does not import zelvior-runtime/tier for this
+  // (an unrelated module pull-in for one cheap check isn't worth the
+  // coupling); it reads the same two real navigator signals tier.js
+  // does, directly. Read via `window.navigator`/`window.matchMedia`
+  // explicitly, not the bare `navigator`/`matchMedia` identifiers --
+  // Node.js itself provides a global `navigator` (since Node 21) that
+  // silently answers with Node's own values instead of throwing, which
+  // is a real, easy-to-hit footgun in any tooling that evaluates this
+  // code outside an actual page (bundler SSR passes, Node-based test
+  // harnesses). Explicitly scoping to `window.*` avoids the ambiguity
+  // entirely rather than relying on the accident of which global wins.
+  var lowEndDevice = false;
+  try {
+    var cores = window.navigator.hardwareConcurrency;
+    var mem = window.navigator.deviceMemory; // Chromium-only; undefined elsewhere, and that's fine below
+    lowEndDevice = (typeof cores === 'number' && cores <= 2) || (typeof mem === 'number' && mem <= 2);
+  } catch (e) {}
+
+  var reducedMotion = false;
+  try { reducedMotion = opts.reducedMotionAware !== false && window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
+
+  // Long-task/frame-drop awareness, self-contained -- a local
+  // PerformanceObserver, not a pull from any other module. Feature-
+  // detected; simply stays at zero pressure on engines without the
+  // 'longtask' entry type (Safari, most non-Chromium browsers today),
+  // which only means the adaptive throttling below never escalates
+  // beyond its base cadence there -- it does not break anything.
+  var recentLongTasks = 0;
+  var longTaskObserver = null;
+  if (opts.longTaskAware !== false && typeof PerformanceObserver !== 'undefined') {
+    try {
+      if (PerformanceObserver.supportedEntryTypes && PerformanceObserver.supportedEntryTypes.indexOf('longtask') > -1) {
+        longTaskObserver = new PerformanceObserver(function (list) {
+          recentLongTasks += list.getEntries().length;
+        });
+        longTaskObserver.observe({ type: 'longtask', buffered: false });
       }
-      // If the caller explicitly set `passive: false`, that is respected
-      // as-is and NOT overridden -- this forces a sensible default, it
-      // does not strip an explicit opt-out.
+    } catch (e) { longTaskObserver = null; }
+  }
+  // Decays the long-task counter instead of ever fully resetting it on a
+  // fixed timer (which would itself be a small permanent loop) -- it's
+  // decremented lazily, only when a scroll frame actually runs.
+  function decayPressure() { if (recentLongTasks > 0) recentLongTasks--; }
+
+  // FastDOM-style read/write separation, local to this controller so
+  // scroll-time consumers get it without importing zelvior-runtime/paint
+  // (again: no unrelated module pulled in for this). Reads run before
+  // writes within the same already-scheduled frame -- never a separate
+  // frame each, which would just be a second layout-thrashing hazard.
+  var reads = [], writes = [];
+  function flushReadsWrites() {
+    var r = reads; reads = [];
+    var w = writes; writes = [];
+    for (var i = 0; i < r.length; i++) { try { r[i](); } catch (e) {} }
+    for (var j = 0; j < w.length; j++) { try { w[j](); } catch (e) {} }
+  }
+
+  var rafId = null;
+  var frameCounter = 0;
+  var settleTimer = null;
+  var stopped = false;
+
+  function currentPosition() {
+    if (target === window) {
+      return {
+        x: window.pageXOffset !== undefined ? window.pageXOffset : document.documentElement.scrollLeft,
+        y: window.pageYOffset !== undefined ? window.pageYOffset : document.documentElement.scrollTop,
+      };
     }
-    return patchedAEL.call(this, type, listener, options);
+    return { x: target.scrollLeft, y: target.scrollTop };
+  }
+
+  function runFrame() {
+    rafId = null;
+    frameCounter++;
+    decayPressure();
+
+    // Escalating cadence, not a binary on/off: a genuinely struggling
+    // device (recent long tasks piling up) or a low-end/reduced-motion
+    // context runs the consumer callback every other frame instead of
+    // every frame -- still responsive, but roughly half the scroll-time
+    // work. This is "reduce non-critical work while scrolling is
+    // expensive," not "stop responding to scroll."
+    var underPressure = recentLongTasks >= 2 || lowEndDevice || reducedMotion;
+    var shouldRun = !underPressure || (frameCounter % 2 === 0);
+
+    if (shouldRun) {
+      var pos = currentPosition();
+      try {
+        fn({
+          x: pos.x, y: pos.y, target: target,
+          lowEndDevice: lowEndDevice, reducedMotion: reducedMotion, underPressure: underPressure,
+          read: function (r) { reads.push(r); },
+          write: function (w) { writes.push(w); },
+        });
+      } catch (e) {}
+      flushReadsWrites();
+    }
+  }
+
+  function onScrollEvent() {
+    if (stopped) return;
+    if (rafId === null) rafId = requestAnimationFrame(runFrame);
+    if (settleTimer) clearTimeout(settleTimer);
+    settleTimer = setTimeout(function () { settleTimer = null; }, settleMs);
+  }
+
+  target.addEventListener('scroll', onScrollEvent, passiveOpts(capture));
+  // Touch listeners are also registered passive -- this module never
+  // needs to call preventDefault(), so there is no reason not to, and
+  // doing so lets the browser start scrolling without waiting on this
+  // listener at all.
+  var touchTarget = target === window ? window : target;
+  touchTarget.addEventListener('touchmove', function () {}, passiveOpts(capture));
+
+  return {
+    stop: function () {
+      if (stopped) return;
+      stopped = true;
+      target.removeEventListener('scroll', onScrollEvent, passiveOpts(capture));
+      if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
+      if (settleTimer) { clearTimeout(settleTimer); settleTimer = null; }
+      if (longTaskObserver) { longTaskObserver.disconnect(); longTaskObserver = null; }
+      reads = []; writes = [];
+    },
+    isIdle: function () { return rafId === null && settleTimer === null; },
+    isLowEndDevice: function () { return lowEndDevice; },
+    isReducedMotion: function () { return reducedMotion; },
   };
-  return restore;
-}
-
-function restore() {
-  if (!patchedAEL) return;
-  EventTarget.prototype.addEventListener = patchedAEL;
-  patchedAEL = null;
-}
-
-/** Undo `forcePassiveScrolling()`. Safe to call even if never activated. */
-export function restorePassiveScrolling() {
-  restore();
-}
-
-/** Whether `forcePassiveScrolling()` is currently active. */
-export function isForcingPassiveScrolling() {
-  return patchedAEL !== null;
 }

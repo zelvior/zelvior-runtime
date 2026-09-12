@@ -50,6 +50,7 @@ export default [
         btoa: 'readonly',
         atob: 'readonly',
         EventTarget: 'readonly',
+        URL: 'readonly',
       },
     },
     rules: {
